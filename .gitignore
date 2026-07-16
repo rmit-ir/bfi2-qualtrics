@@ -1,0 +1,12 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+
+# Qualtrics response-data exports (not part of the deliverable)
+*_[0-9][0-9].[0-9][0-9].zip
+
+# Claude Code machine-local settings
+.claude/settings.local.json
