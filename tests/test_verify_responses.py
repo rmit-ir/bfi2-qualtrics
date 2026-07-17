@@ -178,29 +178,40 @@ class TestVerifyResponses(unittest.TestCase):
             return df
 
     def _make_respondents(self):
-        # A clean, varied respondent — no flags. Build a pattern with no long
-        # runs and a low DRIP (consistent within each pair).
-        clean = {}
-        base_cycle = [2, 4, 1, 5, 3]
-        for i in range(1, N_ITEMS + 1):
-            clean[i] = base_cycle[(i - 1) % len(base_cycle)]
-        # Force each DRIP pair to be internally consistent (post-reverse equal)
-        # so the clean respondent's DRIP is 0.
-        for p in self.pairs:
-            v2 = clean[p["item2"]]
-            target = (6 - v2) if p["reverse2"] else v2
-            clean[p["item1"]] = (6 - target) if p["reverse1"] else target
+        """Synthetic sample: one trait-consistent clean respondent, a
+        straight-liner, an engineered inconsistent responder, a speeder, and
+        a fleet of trait-consistent reference rows.
 
-        # Straight-liner: all "3" -> longstring 60. DRIP: post-reverse a pair
-        # may differ, but with all raw 3 -> reverse gives 3 too, so DRIP 0.
+        Trait-consistent = each facet gets a trait level and every item in
+        that facet is answered at that level on the KEYED scale (reverse
+        items answered 6 - level raw). That satisfies every consistency
+        check at once: DRIP pairs agree (same facet), facet even-odd halves
+        agree, synonym pairs agree, and the respondent tracks the sample
+        consensus — while raw answers still vary item to item (levels 2/3/4
+        across facets), keeping longstring and within-person SD unflagged.
+        """
+        meta = full_choice_meta()
+        facets = sorted({m["facet"] for m in meta.values()})
+        facet_idx = {f: i for i, f in enumerate(facets)}
+
+        def trait_respondent(level_of):
+            """Raw 1..5 answers from keyed facet levels."""
+            scores = {}
+            for i in range(1, N_ITEMS + 1):
+                lv = min(5, max(1, level_of(facet_idx[meta[i]["facet"]])))
+                scores[i] = (6 - lv) if meta[i]["reverse"] else lv
+            return scores
+
+        clean = trait_respondent(lambda f: 2 + (f % 3))
+
+        # Straight-liner: all raw "3" -> longstring 60, SD 0. DRIP stays 0
+        # (keyed 3 either way), proving flags are independent.
         straight = {i: 3 for i in range(1, N_ITEMS + 1)}
 
-        # Random responder engineered to guarantee DRIP >= 14: set each pair to
-        # maximal post-reverse disagreement (|1-5| = 4 per pair -> 60 total),
-        # while keeping raw runs short.
+        # Inconsistent responder engineered to guarantee DRIP >= 14: each
+        # pair maximally disagrees post-reverse (|1-5| = 4 per pair -> 60).
         random_r = {i: 3 for i in range(1, N_ITEMS + 1)}
         for p in self.pairs:
-            # raw so that post-reverse item1=1, item2=5 -> |1-5|=4.
             random_r[p["item1"]] = 5 if p["reverse1"] else 1
             random_r[p["item2"]] = 1 if p["reverse2"] else 5
 
@@ -213,13 +224,15 @@ class TestVerifyResponses(unittest.TestCase):
             {"scores": random_r, "Duration": 300},
             {"scores": fast, "Duration": 10},  # 10s < 2*60=120
         ]
-        # Pad with extra clean-ish rows so N > n_items for Mahalanobis to run.
+        # Reference fleet: trait-consistent rows jittered around the clean
+        # respondent's levels, so N > n_items (Mahalanobis runs), synonym
+        # pairs exist, and the consensus sits near the clean row.
         for k in range(70):
-            jitter = dict(clean)
-            # small varied perturbation, keep runs short and DRIP low-ish
-            idx = (k % N_ITEMS) + 1
-            jitter[idx] = (jitter[idx] % 5) + 1
-            respondents.append({"scores": jitter, "Duration": 300})
+            respondents.append({
+                "scores": trait_respondent(
+                    lambda f, k=k: 2 + (f % 3) + (((k + f) % 3) - 1)),
+                "Duration": 300,
+            })
         return respondents, clean, straight, random_r
 
     def test_flags(self):
@@ -231,22 +244,33 @@ class TestVerifyResponses(unittest.TestCase):
         random_row = df.iloc[2]
         fast_row = df.iloc[3]
 
-        # Clean: no flags at all.
+        # Clean: no flags at all, and high consistency metrics.
         self.assertEqual(clean_row["Careless_Flags"], "")
+        self.assertGreater(float(clean_row["psychsyn_r"]), 0.9)
+        self.assertGreater(float(clean_row["evenodd_r"]), 0.9)
+        self.assertGreater(float(clean_row["person_total_r"]), 0.9)
 
-        # Straight-liner: longstring fires; DRIP does NOT (all-3 -> DRIP 0),
-        # proving flags are independent.
+        # Straight-liner: BOTH invariability checks fire; DRIP does NOT
+        # (all-3 -> DRIP 0, the blind spot Ruchensky et al. acknowledge),
+        # proving flags are independent. Its consistency correlations are
+        # undefined (constant vector) and must not be flagged.
         self.assertIn("flag_longstring", straight_row["Careless_Flags"])
+        self.assertIn("flag_variance", straight_row["Careless_Flags"])
         self.assertNotIn("flag_drip", straight_row["Careless_Flags"])
+        self.assertNotIn("flag_psychsyn", straight_row["Careless_Flags"])
         self.assertEqual(int(float(straight_row["drip_score"])), 0)
+        self.assertEqual(float(straight_row["response_sd"]), 0.0)
 
-        # Random responder: DRIP fires (engineered to 60 >= 14).
+        # Inconsistent responder: the consistency checks fire (engineered to
+        # DRIP 60 >= 14, which also destroys synonym and even-odd agreement).
         self.assertIn("flag_drip", random_row["Careless_Flags"])
+        self.assertIn("flag_psychsyn", random_row["Careless_Flags"])
+        self.assertIn("flag_evenodd", random_row["Careless_Flags"])
         self.assertGreaterEqual(int(float(random_row["drip_score"])),
                                 self.mod.DEFAULT_DRIP_CUTOFF)
 
-        # Too-fast: speed fires.
-        self.assertIn("flag_speed", fast_row["Careless_Flags"])
+        # Too-fast: speed fires, and nothing else (same answers as clean).
+        self.assertEqual(fast_row["Careless_Flags"], "flag_speed")
 
         # drip_score column matches an independent reference computation.
         self.assertEqual(int(float(random_row["drip_score"])),

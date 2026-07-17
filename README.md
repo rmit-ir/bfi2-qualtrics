@@ -50,16 +50,31 @@ that directory for details.
 `response_verification/verify_responses.py` scans a Qualtrics **response**
 export (CSV or TSV, choice-label or numeric-value cells — all auto-detected) and
 flags likely careless responding per participant, appending a `Careless_Flags`
-column (and per-check metric/flag columns). It runs post-hoc checks only — the
-surveys contain no instructed-response or bogus items and no page timers:
+column plus per-check metric and flag columns. It implements the post-hoc
+screening battery recommended by Ward & Meade (2023) — through their "moderate"
+tier — plus the BFI-2-specific DRIP scale (Ruchensky et al., 2025). The surveys
+contain no instructed-response or bogus items and no page timers, so a-priori
+methods don't apply:
 
 - **Speed** — total completion time under 2 seconds per item.
 - **Longstring** — a run of ≥ 10 identical consecutive answers (straight-lining).
+- **Within-person variability** — answer SD < 0.5 (catches patterned invariance
+  longstring misses).
 - **Mahalanobis distance** — multivariate outliers versus the sample centroid
   (χ² cutoff; skipped when there are too few responses for a stable covariance).
+- **Psychometric synonyms** — within-person correlation across empirically
+  paired items (sample r ≥ .60); low agreement flags inconsistency.
+- **Even-odd consistency** — per-facet odd/even half scores correlated within
+  person, Spearman-Brown corrected (Full and Short forms).
+- **Person-total correlation** — each respondent against the leave-one-out
+  sample consensus.
 - **DRIP** (full form only) — the Detection of Response Inconsistency Procedure:
   the sum of absolute differences across 15 highly correlated BFI-2 item pairs
-  (reverse-keyed first), flagged at ≥ 14 (Ruchensky et al.).
+  (reverse-keyed first), flagged at ≥ 14 (Ruchensky et al., 2025).
+
+Rows caught by the invariability checks are excluded from the reference
+statistics the sample-based checks use (sequential removal), so straight-liners
+don't distort the centroid the rest are judged against.
 
 ```
 uv pip install -r response_verification/requirements.txt   # pandas, numpy, scipy
@@ -68,16 +83,25 @@ python3 response_verification/verify_responses.py export.csv -o flagged.csv
 
 (Installs with [uv](https://docs.astral.sh/uv/); plain `pip install` works too.)
 
-Thresholds are overridable (`--longstring-run`, `--drip-cutoff`,
-`--sec-per-item`, `--mahal-alpha`). Flagging is advisory, not an error — every
-respondent is kept in the output; the flags mark rows worth reviewing. Only
-this script needs the third-party packages in `requirements.txt`; the surveys
-and the rest of the repo remain dependency-free.
+Every threshold is overridable on the CLI; see
+`response_verification/README.md` for the full check reference, threshold
+provenance, and what's deliberately out of scope. Flagging is advisory, not an
+error — every respondent is kept in the output; the flags mark rows worth
+reviewing. Only this script needs the third-party packages in
+`requirements.txt`; the surveys and the rest of the repo remain
+dependency-free.
 
-The DRIP pairs and cut score come from:
+The methods come from:
 
-> Ruchensky, J. R., et al. Development of an Inconsistent Responding Scale for
-> the BFI-2.
+> Ward, M. K., & Meade, A. W. (2023). Dealing with careless responding in
+> survey data: Prevention, identification, and recommended best practices.
+> *Annual Review of Psychology, 74*, 577–596.
+> https://doi.org/10.1146/annurev-psych-040422-045007
+
+> Ruchensky, J. R., Edens, J. F., & Donnellan, M. B. (2025). Development of an
+> inconsistent responding scale for the Big Five Inventory-2. *Journal of
+> Personality Assessment, 107*(3), 384–391.
+> https://doi.org/10.1080/00223891.2024.2411557
 
 ## Tests
 
