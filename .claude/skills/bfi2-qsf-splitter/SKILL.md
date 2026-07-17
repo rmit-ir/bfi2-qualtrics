@@ -96,4 +96,7 @@ category keeps a stable ID across runs. See
 - `master_mapping.json` — item text → `{domain, facet, reverse}` for all 60
   BFI-2 items (12 per domain, 4 per facet, 30 reverse-keyed), verified against
   the official keys. The short forms are text subsets of the full pool, so this
-  one map covers all three forms.
+  one map covers all three forms. **Shared dependency:** the careless-responding
+  detector (`response_verification/verify_responses.py`) also reads this map and
+  cross-validates `drip_item_pairs.tsv` against it at load time — editing a
+  facet/domain/reverse entry here can make that check abort. Keep them in sync.

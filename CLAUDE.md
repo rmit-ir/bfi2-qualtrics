@@ -10,6 +10,23 @@ the BFI-2 full form and its short and extra-short variants, each a standalone
 survey with domain- and facet-level scoring baked in. There is no build system.
 Alongside them are two skills for working with `.qsf` files (below) and a test.
 
+`response_verification/` holds a standalone careless-responding detector
+(`verify_responses.py`) for Qualtrics BFI-2 response exports, its DRIP pair
+table (`drip_item_pairs.tsv`), a `requirements.txt`, a `sample_data/` fixture,
+and the source paper. The detector reads CSV or TSV (delimiter by extension),
+UTF-8 or UTF-16 (encoding by BOM), with item cells as choice labels or numeric
+values (inferred from the data) — Qualtrics emits UTF-8 CSV and UTF-16 TSV, and
+either label or value cells, so the loader adapts rather than assuming one. It
+needs pandas/numpy/scipy (the only third-party deps in the repo — everything
+else is stdlib-only), installed via `uv pip install -r
+response_verification/requirements.txt`; its test lives in `tests/`. The DRIP pair
+table is generated from Ruchensky et al.'s Table 1 **by BFI-2 item number**
+(item# = ChoiceID in the Full qsf), with statement text and reverse flags
+pulled from `master_mapping.json` so they match the survey verbatim — statement
+text in older/scraped TSVs of that table was unreliable and must not be trusted.
+`sample_data/` is fabricated fake-response data (test fixture only); raw
+Qualtrics `*.zip` exports are gitignored.
+
 The source survey and the official reference documents (published-form PDFs,
 SPSS syntax) are **not** in this repo — it ships only the finished, scored
 outputs plus tooling. Regenerating `output/` therefore requires supplying the

@@ -1,0 +1,16 @@
+Pair	Domain	Facet	Item1	Item2	Statement1	Statement2	Reverse1	Reverse2	r_S1	r_S2	r_S3
+1	Negative Emotionality	Depression	54	39	Tends to feel depressed, blue.	Often feels sad.	false	false	0.81	0.81	0.86
+2	Open-Mindedness	Aesthetic Sensitivity	35	20	Values art and beauty.	Is fascinated by art, music, or literature.	false	false	0.67	0.66	0.72
+3	Extraversion	Sociability	31	16	Is sometimes shy, introverted.	Tends to be quiet.	true	true	0.67	0.63	0.70
+4	Extraversion	Sociability	46	1	Is talkative.	Is outgoing, sociable.	false	false	0.63	0.64	0.63
+5	Extraversion	Energy Level	56	41	Shows a lot of enthusiasm.	Is full of energy.	false	false	0.63	0.54	0.63
+6	Conscientiousness	Organization	33	3	Keeps things neat and tidy.	Tends to be disorganized.	false	true	0.61	0.64	0.68
+7	Negative Emotionality	Anxiety	49	34	Rarely feels anxious or afraid.	Worries a lot.	true	false	0.59	0.63	0.64
+8	Extraversion	Assertiveness	51	21	Prefers to have others take charge.	Is dominant, acts as a leader.	true	false	0.58	0.62	0.61
+9	Negative Emotionality	Emotional Volatility	44	29	Keeps their emotions under control.	Is emotionally stable, not easily upset.	true	true	0.58	0.58	0.67
+10	Conscientiousness	Responsibility	43	13	Is reliable, can always be counted on.	Is dependable, steady.	false	false	0.57	0.54	0.71
+11	Conscientiousness	Productiveness	53	38	Is persistent, works until the task is finished.	Is efficient, gets things done.	false	false	0.57	0.54	0.65
+12	Agreeableness	Respectfulness	52	7	Is polite, courteous to others.	Is respectful, treats others with respect.	false	false	0.54	0.55	0.64
+13	Conscientiousness	Responsibility	58	28	Sometimes behaves irresponsibly.	Can be somewhat careless.	true	true	0.54	0.59	0.63
+14	Negative Emotionality	Emotional Volatility	59	14	Is temperamental, gets emotional easily.	Is moody, has up and down mood swings.	false	false	0.53	0.58	0.69
+15	Open-Mindedness	Creative Imagination	60	15	Is original, comes up with new ideas.	Is inventive, finds clever ways to do things.	false	false	0.51	0.56	0.69
