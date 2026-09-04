@@ -161,6 +161,9 @@ def build_item7_question():
 
 
 def assert_invariants(main_payload, item7_payload):
+    """Raises AssertionError on failure -- explicit raises, not bare
+    `assert`, so this can't be silently stripped by running under `python
+    -O` (this is the safety net for a research-scoring generator)."""
     def cells_for(category_id, payload):
         return [g for g in payload["GradingData"] if category_id in g["Grades"]]
 
@@ -168,18 +171,27 @@ def assert_invariants(main_payload, item7_payload):
     item7_rps_cells = cells_for(RPS_CATEGORY_ID, item7_payload)
     rps_items_scored = len({g["ChoiceID"] for g in main_rps_cells}) + \
         len({g["ChoiceID"] for g in item7_rps_cells})
-    assert rps_items_scored == 7, f"expected 7 RPS items scored, got {rps_items_scored}"
-    assert len(main_rps_cells) + len(item7_rps_cells) == 7 * 9, \
-        f"expected 63 RPS GradingData cells, got {len(main_rps_cells) + len(item7_rps_cells)}"
+    if rps_items_scored != 7:
+        raise AssertionError(f"expected 7 RPS items scored, got {rps_items_scored}")
+    total_rps_cells = len(main_rps_cells) + len(item7_rps_cells)
+    if total_rps_cells != 7 * 9:
+        raise AssertionError(f"expected 63 RPS GradingData cells, got {total_rps_cells}")
 
     ac_cells = cells_for(ATTENTION_CATEGORY_ID, main_payload)
-    assert len(ac_cells) == 9, f"expected 9 attention-check cells, got {len(ac_cells)}"
+    if len(ac_cells) != 9:
+        raise AssertionError(f"expected 9 attention-check cells, got {len(ac_cells)}")
     correct = [g for g in ac_cells if g["Grades"][ATTENTION_CATEGORY_ID] == "1"]
-    assert len(correct) == 1 and correct[0]["AnswerID"] == ATTENTION_CORRECT_ANSWER_ID
+    if not (len(correct) == 1 and correct[0]["AnswerID"] == ATTENTION_CORRECT_ANSWER_ID):
+        raise AssertionError(
+            f"expected exactly one attention-check cell scoring 1, at "
+            f"AnswerID {ATTENTION_CORRECT_ANSWER_ID}; got {correct}")
 
     for payload in (main_payload, item7_payload):
         for g in payload["GradingData"]:
-            assert len(g["Grades"]) == 1, f"{payload['QuestionID']} cell has {len(g['Grades'])} Grades keys, expected 1"
+            if len(g["Grades"]) != 1:
+                raise AssertionError(
+                    f"{payload['QuestionID']} cell has {len(g['Grades'])} "
+                    "Grades keys, expected 1")
 
 
 def main():
@@ -189,6 +201,18 @@ def main():
 
     with open(INPUT_FILE, "r", encoding="utf-8") as f:
         qsf = json.load(f)
+
+    existing_qids = {e.get("PrimaryAttribute") for e in qsf["SurveyElements"]
+                     if e.get("Element") == "SQ"}
+    if QID_MAIN in existing_qids or QID_ITEM7 in existing_qids:
+        # INPUT_FILE is always BFI-2_Full.qsf (never this script's own
+        # output), so this shouldn't be reachable in normal use -- but
+        # cheap insurance against silently producing a duplicate-question
+        # qsf if that ever changes.
+        raise SystemExit(
+            f"{INPUT_FILE} already contains {QID_MAIN}/{QID_ITEM7} -- "
+            "expected the plain BFI-2 Full form as input, not an "
+            "already-RPS-augmented one.")
 
     main_payload = build_main_question()
     item7_payload = build_item7_question()
@@ -221,8 +245,12 @@ def main():
 
     qsf["SurveyEntry"]["SurveyName"] = "BFI-2 Full + Risk Propensity Scale (scored)"
 
-    with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
+    # Write to a sibling temp file, then rename into place -- an
+    # interruption mid-write can't leave a truncated OUTPUT_FILE.
+    tmp = OUTPUT_FILE.with_suffix(OUTPUT_FILE.suffix + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(qsf, f, separators=(",", ":"))
+    tmp.replace(OUTPUT_FILE)
 
     print(f"Wrote {OUTPUT_FILE.relative_to(REPO_ROOT)}: "
           f"60 BFI-2 items + 7 RPS items + 1 attention-check item scored, "

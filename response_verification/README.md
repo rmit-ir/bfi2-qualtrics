@@ -76,6 +76,41 @@ consistency indices score a straight-liner as perfectly *consistent* (all-"3"
 invariability checks catch exactly that case and say nothing about random
 responding. Speed is independent of both.
 
+## Known limitations
+
+- **Longstring vs. item randomization.** `../output/BFI-2_Full.qsf` (and
+  the other forms) set `Randomization.Type: "All"` on the matrix
+  question — Qualtrics shows each respondent the items in a different
+  order. `flag_longstring` computes its "consecutive identical answers"
+  run over the exported columns in **published item-number order**, not
+  the order that respondent actually saw — those aren't the same
+  sequence per respondent. This can distort the metric in **either
+  direction**: a genuinely consecutive on-screen run can get scattered
+  across item-number columns (understating true straight-lining), and
+  conversely, items that are adjacent in item-number order but were
+  *not* shown consecutively can coincidentally share an answer by chance
+  (inflating `longstring_max` for an attentive respondent — a possible
+  false positive). Reconstructing true display order would need
+  Qualtrics to export per-response item ordering, which isn't currently
+  captured; disabling randomization would remove a real methodological
+  benefit (order-effect control) for an uncertain gain in one check's
+  precision. Neither change is made unilaterally here — flagging it for
+  whoever calibrates this battery to decide, and treating `flag_longstring`
+  as one input among several (as the rest of this battery already does)
+  rather than a precise measurement on its own.
+- **Mahalanobis "skipped" vs. "stable."** `flag_mahalanobis` runs as soon
+  as the reference sample exceeds `n_items` (61 responses for 60 items) —
+  the minimum for the covariance matrix to be invertible at all, not for
+  it to be a *stable* estimate (rules of thumb for that typically want
+  several times `n_items`). Treat this check as more trustworthy the
+  larger the reference sample is above that bare minimum, particularly
+  early in data collection.
+- **CSV output escapes the *original* export's cells against spreadsheet-
+  formula injection** (a leading `=`, `+`, `-`, `@`, tab, or CR is
+  prefixed with `'`) but does not, and cannot, prevent the same risk if
+  *you* later open the input export directly in Excel/Sheets — that risk
+  exists independent of this script.
+
 ## Method coverage
 
 Every BFI-2-relevant method identified in the two source papers, and where

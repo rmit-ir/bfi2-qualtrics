@@ -56,12 +56,13 @@ end-of-survey.
    in the Web Service JSON body in §5 becomes invalid JSON if the field is
    ever blank — initializing it here, same as `attention_checks_passed`,
    is what guarantees it never is).
-2. **Content block** — the single question from `BFI-2_Full_RPS.qsf`
-   containing all 60 BFI-2 items, all 7 RPS items (item 7 is a second
-   question, `QID101`, immediately after — see `add_rps.py`'s docstring
-   for why it can't share the main matrix's answer scale), and the
-   attention-check row (`QID100`, choice 7, "To show you're reading
-   carefully, please select 'Totally Agree' for this item."). Put this
+2. **Content block** — the three questions from `BFI-2_Full_RPS.qsf`,
+   unchanged from how the file already lays them out (same block, one
+   page): `QID2` (the 60 BFI-2 items), `QID100` (6 RPS items + the
+   attention-check row, choice 7 — "To show you're reading carefully,
+   please select 'Totally Agree' for this item."), and `QID101` (RPS item
+   7, on its own — see `add_rps.py`'s docstring for why it can't share
+   `QID100`'s answer scale). Put this
    block on its own page (see step 3's note on why).
 3. **JavaScript block** — a real, rendered question (a Descriptive
    Text/Graphic question is fine) carrying the generated snippet (§4

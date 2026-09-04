@@ -12,17 +12,6 @@ import json
 import re
 import sys
 
-errors = []
-warnings = []
-
-
-def err(msg):
-    errors.append(msg)
-
-
-def warn(msg):
-    warnings.append(msg)
-
 
 def blocks_of(bl_payload):
     """BL.Payload is an array in some exports, a dict keyed '0','1',... in others."""
@@ -34,18 +23,46 @@ def blocks_of(bl_payload):
 
 
 def lint(path):
+    """Lint one file. Returns (errors, warnings) -- fresh lists every call,
+    not module-level state, so calling this repeatedly in one process
+    (e.g. from a test importing this module) never leaks one file's
+    results into the next.
+
+    Never raises: a genuinely malformed/adversarial .qsf that trips an
+    unanticipated shape (a non-dict Choices, a null BlockElements, ...)
+    anywhere below is caught and reported as an error, same as any other
+    finding, rather than crashing the caller. The safety net lives HERE,
+    not just in main()'s CLI wrapper, so a caller that imports this module
+    directly (as tests/test_qsf_parses.py does) gets the same guarantee.
+    """
+    try:
+        return _lint_unsafe(path)
+    except Exception as e:
+        return [f"{path}: linter crashed on this file: {type(e).__name__}: {e}"], []
+
+
+def _lint_unsafe(path):
+    errors = []
+    warnings = []
+
+    def err(msg):
+        errors.append(msg)
+
+    def warn(msg):
+        warnings.append(msg)
+
     with open(path, "r", encoding="utf-8") as f:
         try:
             qsf = json.load(f)
         except json.JSONDecodeError as e:
             err(f"{path}: not valid JSON: {e}")
-            return
+            return errors, warnings
 
     entry = qsf.get("SurveyEntry")
     elements = qsf.get("SurveyElements")
     if not isinstance(entry, dict) or not isinstance(elements, list):
         err(f"{path}: missing SurveyEntry object or SurveyElements array")
-        return
+        return errors, warnings
 
     survey_id = entry.get("SurveyID")
     if not survey_id:
@@ -53,6 +70,9 @@ def lint(path):
 
     by_type = {}
     for el in elements:
+        if not isinstance(el, dict):
+            err(f"{path}: SurveyElements contains a non-object entry: {el!r}")
+            continue
         by_type.setdefault(el.get("Element"), []).append(el)
         if el.get("SurveyID") != survey_id:
             err(f"{path}: {el.get('Element')}/{el.get('PrimaryAttribute')}: "
@@ -70,6 +90,9 @@ def lint(path):
     default_blocks = 0
     if "BL" in by_type:
         for block in blocks_of(by_type["BL"][0].get("Payload")):
+            if not isinstance(block, dict):
+                err(f"{path}: BL contains a non-object block entry: {block!r}")
+                continue
             bid = block.get("ID")
             if not bid:
                 err(f"{path}: block without ID: {block.get('Description')!r}")
@@ -80,7 +103,7 @@ def lint(path):
             if block.get("Type") == "Default":
                 default_blocks += 1
             for be in block.get("BlockElements", []):
-                if be.get("Type") == "Question":
+                if isinstance(be, dict) and be.get("Type") == "Question":
                     question_refs.setdefault(be.get("QuestionID"), []).append(bid)
         if default_blocks != 1:
             warn(f"{path}: {default_blocks} Default blocks, expected exactly 1")
@@ -105,10 +128,18 @@ def lint(path):
         amissing = [a for a in aorder if a not in answers]
         if amissing:
             err(f"{path}: SQ {qid}: AnswerOrder references missing answers {amissing}")
-        if choices:
-            max_choice = max(int(k) for k in choices if str(k).isdigit())
-            if p.get("NextChoiceId") is not None and p["NextChoiceId"] <= max_choice:
-                err(f"{path}: SQ {qid}: NextChoiceId {p['NextChoiceId']} <= max choice {max_choice}")
+        digit_choices = [int(k) for k in choices if str(k).isdigit()]
+        if digit_choices:
+            max_choice = max(digit_choices)
+            next_id = p.get("NextChoiceId")
+            if next_id is not None:
+                if not isinstance(next_id, int):
+                    err(f"{path}: SQ {qid}: NextChoiceId {next_id!r} is not an integer")
+                elif next_id <= max_choice:
+                    err(f"{path}: SQ {qid}: NextChoiceId {next_id} <= max choice {max_choice}")
+        elif choices:
+            warn(f"{path}: SQ {qid}: Choices has no numeric keys ({list(choices)!r}) "
+                 "-- can't verify NextChoiceId")
 
     # --- Cross-refs: blocks <-> questions ---
     for qid, bids in question_refs.items():
@@ -153,9 +184,11 @@ def lint(path):
             sco_cat_ids.add(cid)
     # GradingData is one entry per matrix cell (ChoiceID x AnswerID); each
     # entry's Grades maps category ID -> that cell's point value. See SCHEMA.md.
+    referenced_categories = set()
     for qid, p in sq_by_qid.items():
         answer_ids = {str(a) for a in (p.get("Answers") or {})}
         legacy_entries = 0
+        seen_cells = set()
         for g in p.get("GradingData") or []:
             cid_choice = str(g.get("ChoiceID"))
             if cid_choice not in (p.get("Choices") or {}):
@@ -163,24 +196,42 @@ def lint(path):
             grades = g.get("Grades") or {}
             if "Category" in g:  # pre-2026-07 flat shape, never valid in a real export
                 legacy_entries += 1
-                if sco_cat_ids and g["Category"] not in sco_cat_ids:
+                if g["Category"] not in sco_cat_ids:
                     err(f"{path}: SQ {qid}: GradingData category {g['Category']!r} "
                         f"not in SCO ScoringCategories")
+                referenced_categories.add(g["Category"])
                 continue
             if "AnswerID" in g:  # real cell shape
                 aid = str(g.get("AnswerID"))
                 if answer_ids and aid not in answer_ids:
                     err(f"{path}: SQ {qid}: GradingData AnswerID {aid} not in Answers")
+                cell_key = (cid_choice, aid)
+                if cell_key in seen_cells:
+                    err(f"{path}: SQ {qid}: duplicate GradingData entry for "
+                        f"(choice {cid_choice}, answer {aid})")
+                seen_cells.add(cell_key)
             else:
                 warn(f"{path}: SQ {qid}: GradingData entry for choice {cid_choice} has no "
                      f"AnswerID (expected one entry per matrix cell)")
-            for cat_id in grades:
-                if sco_cat_ids and cat_id not in sco_cat_ids:
+            for cat_id, points in grades.items():
+                if cat_id not in sco_cat_ids:
                     err(f"{path}: SQ {qid}: GradingData category {cat_id!r} "
                         f"not in SCO ScoringCategories")
+                referenced_categories.add(cat_id)
+                if not isinstance(points, (int, str)) or (
+                        isinstance(points, str) and not
+                        re.match(r"^-?\d+(\.\d+)?$", points)):
+                    err(f"{path}: SQ {qid}: GradingData cell (choice {cid_choice}, "
+                        f"answer {g.get('AnswerID')}) category {cat_id!r} has "
+                        f"non-numeric Grades value {points!r}")
         if legacy_entries:
             warn(f"{path}: SQ {qid}: {legacy_entries} GradingData entries use the pre-2026-07 "
                  f"flat Category shape; regenerate — real Qualtrics exports use per-cell entries")
+
+    unused = sco_cat_ids - referenced_categories - {None}
+    if unused:
+        warn(f"{path}: SCO defines {len(unused)} scoring categor{'y' if len(unused) == 1 else 'ies'} "
+             f"never referenced by any GradingData: {sorted(unused)}")
 
     # --- QC ---
     for el in by_type.get("QC", []):
@@ -190,20 +241,27 @@ def lint(path):
             warn(f"{path}: QC declares {declared} questions, file has {actual} "
                  f"(QC counts Trash questions too)")
 
+    return errors, warnings
+
 
 def main():
     if len(sys.argv) < 2:
         print(__doc__.strip(), file=sys.stderr)
         sys.exit(2)
+    any_errors = False
+    any_output = False
     for path in sys.argv[1:]:
-        lint(path)
-    for w in warnings:
-        print(f"WARN  {w}")
-    for e in errors:
-        print(f"ERROR {e}")
-    if not warnings and not errors:
+        errors, warnings = lint(path)  # never raises -- see lint()'s docstring
+        for w in warnings:
+            print(f"WARN  {w}")
+            any_output = True
+        for e in errors:
+            print(f"ERROR {e}")
+            any_output = True
+        any_errors = any_errors or bool(errors)
+    if not any_output:
         print("OK: no problems found")
-    sys.exit(1 if errors else 0)
+    sys.exit(1 if any_errors else 0)
 
 
 if __name__ == "__main__":

@@ -15,12 +15,66 @@ Usage:
     python3 gen_drip_js.py
 """
 import csv
+import json
 import sys
 from pathlib import Path
 
 SKILL_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SKILL_DIR.parent.parent.parent
 PAIRS_FILE = REPO_ROOT / "response_verification" / "drip_item_pairs.tsv"
+FULL_QSF = REPO_ROOT / "output" / "BFI-2_Full.qsf"
+
+sys.path.insert(0, str(SKILL_DIR))
+# split_bfi2 (not verify_responses) deliberately -- it's stdlib-only, and
+# this script must stay stdlib-only too (verify_responses.py needs
+# pandas/numpy/scipy; the rest of the repo, including this script, doesn't).
+from split_bfi2 import normalize_text, load_master_mapping  # noqa: E402
+
+
+def load_full_form_item_meta():
+    """item number -> {domain, facet, reverse}, via QID2's real Choices."""
+    mapping = load_master_mapping()
+    qsf = json.loads(FULL_QSF.read_text(encoding="utf-8"))
+    sq = next(e for e in qsf["SurveyElements"]
+              if e["Element"] == "SQ" and e["PrimaryAttribute"] == "QID2")
+    return {int(cid): mapping[normalize_text(c["Display"])]
+            for cid, c in sq["Payload"]["Choices"].items()}
+
+
+def cross_validate_pairs(pairs, item_meta):
+    """Abort if a pair's facet/domain/reverse disagrees with master_mapping.json.
+
+    Same check verify_responses.py's cross_validate_pairs runs -- reused
+    here (not imported, to stay off the pandas dependency) because a
+    corrupted pair getting baked into this script's generated client-side
+    JS is worse than the same corruption in the offline detector: it ends
+    up permanently pasted into a live Qualtrics survey, harder to catch
+    after the fact.
+    """
+    problems = []
+    for i, p in enumerate(pairs, start=1):
+        for side in ("1", "2"):
+            item = p[f"item{side}"]
+            meta = item_meta.get(item)
+            if meta is None:
+                problems.append(f"pair {i}: item {item} not present in the Full form")
+                continue
+            if bool(meta["reverse"]) != p[f"reverse{side}"]:
+                problems.append(
+                    f"pair {i}: item {item} reverse={meta['reverse']} in "
+                    f"master_mapping.json but reverse{side}={p[f'reverse{side}']} in the TSV")
+            if meta["facet"] != p["facet"]:
+                problems.append(
+                    f"pair {i}: item {item} facet {meta['facet']!r} in "
+                    f"master_mapping.json but table facet {p['facet']!r}")
+            if meta["domain"] != p["domain"]:
+                problems.append(
+                    f"pair {i}: item {item} domain {meta['domain']!r} in "
+                    f"master_mapping.json but table domain {p['domain']!r}")
+    if problems:
+        raise SystemExit(
+            "drip_item_pairs.tsv disagrees with master_mapping.json:\n  "
+            + "\n  ".join(problems))
 
 
 def load_pairs():
@@ -32,9 +86,17 @@ def load_pairs():
                 "item1": int(row["Item1"]), "item2": int(row["Item2"]),
                 "reverse1": row["Reverse1"].strip().lower() == "true",
                 "reverse2": row["Reverse2"].strip().lower() == "true",
+                "domain": row["Domain"], "facet": row["Facet"],
             })
     if len(pairs) != 15:
         raise SystemExit(f"expected 15 DRIP pairs, found {len(pairs)}")
+    seen_items = set()
+    for p in pairs:
+        for item in (p["item1"], p["item2"]):
+            if item in seen_items:
+                raise SystemExit(f"item {item} appears in more than one DRIP pair")
+            seen_items.add(item)
+    cross_validate_pairs(pairs, load_full_form_item_meta())
     return pairs
 
 

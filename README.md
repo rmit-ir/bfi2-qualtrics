@@ -31,7 +31,13 @@ items, for which the published BFI-2-XS defines domain scores only.
 
 Responses export with one column per item plus one column per scoring category.
 Scores are reported as **sums**; the standard BFI-2 convention is the *mean*
-(divide a domain by its item count and a facet by its item count).
+(divide a domain by its item count and a facet by its item count). The
+`ForceResponse` on these matrices is a **soft** prompt — a respondent can
+submit with an item skipped, and Qualtrics' scoring (`IgnoreNullValues:
+true`) then sums only the items actually answered. Dividing that partial
+sum by the *full* published item count understates the true mean for
+that respondent; check for incomplete rows (or require answers) before
+trusting a sum-to-mean conversion on data that may have missing items.
 
 ## Scoring
 

@@ -69,14 +69,19 @@ jq '.' file.qsf | less
 
 ## Hard-won rules (also in SCHEMA.md)
 
-- `.qsf` is single-line JSON; when writing, use compact separators
-  (`json.dump(..., separators=(",", ":"))`).
+- Qualtrics requires **valid JSON**, not single-line — it imports
+  pretty-printed files too. This repo writes single-line/compact
+  (`json.dump(..., separators=(",", ":"))`) as its own convention, not
+  because Qualtrics demands it; what actually breaks an import is
+  malformed JSON (e.g. a non-JSON-aware tool un-escaping quotes inside
+  embedded HTML). Reformat only with JSON-aware tools.
 - `Display` text contains non-breaking spaces (U+00A0), `&nbsp;`, and curly
   quotes. Normalize copies for matching; never rewrite the originals.
 - `DataExportTag` is the contract with downstream analysis — don't change it.
-- One `GradingData` entry per `ChoiceID`; multiple scoring categories go as
-  parallel keys inside that entry's `Grades` object (verified shape — see
-  SCHEMA.md), each keyed by a category ID defined in `SCO`.
+- One `GradingData` entry per matrix **cell** — i.e. per `(ChoiceID,
+  AnswerID)` pair, so an N-item question has N×(number of answer options)
+  entries. Each entry's `Grades` maps scoring-category ID -> that one
+  cell's point value (a scalar, not a nested map) — see SCHEMA.md.
 - New choices take the current `NextChoiceId` as their key; increment it,
   never reuse a deleted ID.
 - Scoring internals (`SCO`/`GradingData`) are reverse-engineered, not

@@ -91,6 +91,7 @@ References:
 """
 import argparse
 import json
+import math
 import re
 import sys
 from pathlib import Path
@@ -130,6 +131,14 @@ FORM_QSF = {
     "short": ("BFI-2_Short.qsf", "QID3"),
     "extra-short": ("BFI-2_ExtraShort.qsf", "QID4"),
 }
+
+# The real published item count per form -- checked against the detected
+# item columns so a truncated or filtered export (missing columns, or an
+# accidental partial export) is rejected with a clear message rather than
+# silently scored against the wrong item count (a wrong flag_speed
+# threshold) or crashing deep inside a check that assumes every item
+# exists (DRIP's item lookups).
+EXPECTED_N_ITEMS = {"full": 60, "short": 30, "extra-short": 15}
 
 DURATION_COL = "Duration (in seconds)"
 
@@ -176,17 +185,31 @@ def load_master_mapping():
 
 
 def load_form_meta(form_name, mapping):
-    """item number -> {domain, facet, reverse} for the detected form.
+    """item number -> {domain, facet, reverse, text} for the detected form.
 
     Looks the form's own qsf up so item numbers map to the right statements
-    (Short/XS item numbers are form-local, not Full-form numbers).
+    (Short/XS item numbers are form-local, not Full-form numbers). `text` is
+    the item's actual Display text in this qsf (a fresh dict per item, not
+    a mutated master_mapping entry -- entries are shared across forms).
     """
     fname, qid = FORM_QSF[form_name]
-    qsf = json.loads((REPO_ROOT / "output" / fname).read_text(encoding="utf-8"))
-    sq = next(e for e in qsf["SurveyElements"]
-              if e["Element"] == "SQ" and e["PrimaryAttribute"] == qid)
-    return {int(cid): mapping[normalize_text(c["Display"])]
-            for cid, c in sq["Payload"]["Choices"].items()}
+    qsf_path = REPO_ROOT / "output" / fname
+    qsf = json.loads(qsf_path.read_text(encoding="utf-8"))
+    sq = next((e for e in qsf["SurveyElements"]
+               if e["Element"] == "SQ" and e["PrimaryAttribute"] == qid), None)
+    if sq is None:
+        raise SystemExit(f"{qsf_path}: no {qid} question found (expected the "
+                          f"{form_name} form's item matrix)")
+    meta = {}
+    for cid, c in sq["Payload"]["Choices"].items():
+        key = normalize_text(c["Display"])
+        if key not in mapping:
+            raise SystemExit(
+                f"{qsf_path}: item {cid} ({c['Display']!r}) has no entry in "
+                "master_mapping.json -- edited item wording, or the map is "
+                "out of date?")
+        meta[int(cid)] = {**mapping[key], "text": c["Display"]}
+    return meta
 
 
 def load_drip_pairs():
@@ -202,7 +225,12 @@ def load_drip_pairs():
             "item2": int(row["Item2"]),
             "reverse1": row["Reverse1"].strip().lower() == "true",
             "reverse2": row["Reverse2"].strip().lower() == "true",
+            "statement1": row.get("Statement1"),
+            "statement2": row.get("Statement2"),
         })
+    if len(pairs) != 15:
+        raise SystemExit(
+            f"{DRIP_PAIRS_TSV}: expected exactly 15 DRIP pairs, found {len(pairs)}")
     return pairs
 
 
@@ -210,13 +238,20 @@ def cross_validate_pairs(pairs, choice_meta):
     """Abort if drip_item_pairs.tsv disagrees with master_mapping.json.
 
     choice_meta maps item number -> mapping entry for the FULL form.
-    Validates that each pair's items exist, share the pair's facet/domain, and
-    that the TSV reverse flags match the master key.
+    Validates that each pair's items exist, share the pair's facet/domain,
+    that the TSV reverse flags match the master key, that no item appears
+    in more than one pair, and that Statement1/Statement2 still match the
+    survey's actual item text (those columns are documentation-only, never
+    used for scoring, so nothing else would catch them drifting stale).
     """
     problems = []
+    seen_items = set()
     for p in pairs:
         for side in ("1", "2"):
             item = p[f"item{side}"]
+            if item in seen_items:
+                problems.append(f"pair {p['pair']}: item {item} also appears in an earlier pair")
+            seen_items.add(item)
             meta = choice_meta.get(item)
             if meta is None:
                 problems.append(f"pair {p['pair']}: item {item} not present in form")
@@ -233,6 +268,12 @@ def cross_validate_pairs(pairs, choice_meta):
                 problems.append(
                     f"pair {p['pair']}: item {item} reverse {meta['reverse']} "
                     f"!= table reverse {p[f'reverse{side}']}")
+            statement = p.get(f"statement{side}")
+            if statement is not None and meta.get("text") is not None and \
+                    normalize_text(statement) != normalize_text(meta["text"]):
+                problems.append(
+                    f"pair {p['pair']}: item {item} statement{side} "
+                    f"{statement!r} != survey text {meta['text']!r}")
     if problems:
         raise SystemExit(
             "drip_item_pairs.tsv is inconsistent with master_mapping.json:\n  "
@@ -273,6 +314,20 @@ def read_export(path):
     encoding = sniff_encoding(path)
     header_rows = pd.read_csv(path, header=None, nrows=3, dtype=str,
                               sep=sep, encoding=encoding)
+    if header_rows.shape[0] < 3:
+        raise SystemExit(
+            f"{path}: only {header_rows.shape[0]} row(s) found, expected a "
+            "Qualtrics export's 3-row header (column names / question text / "
+            "ImportId JSON). Is 'Insert a row of variable names' plus the "
+            "default advanced export options both enabled?")
+    import_id_row = " ".join(str(v) for v in header_rows.iloc[2].dropna())
+    if "ImportId" not in import_id_row:
+        raise SystemExit(
+            f"{path}: row 3 doesn't look like Qualtrics' {{\"ImportId\": ...}} "
+            "metadata row -- this export's header shape doesn't match what "
+            "this script assumes (3 rows: column names / question text / "
+            "ImportId JSON). Re-export with Qualtrics' default header "
+            "options rather than editing this file by hand.")
     df = pd.read_csv(path, header=0, skiprows=[1, 2], dtype=str,
                      sep=sep, encoding=encoding)
     return df, header_rows, sep, encoding
@@ -295,6 +350,21 @@ def detect_form(columns):
                     item_cols.append((int(suffix), col))
         if item_cols:
             item_cols.sort()
+            numbers = [n for n, _ in item_cols]
+            expected = set(range(1, EXPECTED_N_ITEMS[form_name] + 1))
+            if set(numbers) != expected:
+                missing = sorted(expected - set(numbers))
+                extra = sorted(set(numbers) - expected)
+                detail = []
+                if missing:
+                    detail.append(f"missing item(s) {missing}")
+                if extra:
+                    detail.append(f"unexpected item number(s) {extra}")
+                raise SystemExit(
+                    f"{prefix_tag}_ columns present but don't cover the full "
+                    f"published {form_name} form ({EXPECTED_N_ITEMS[form_name]} "
+                    f"items, 1..{EXPECTED_N_ITEMS[form_name]}): "
+                    f"{'; '.join(detail)}. Truncated or filtered export?")
             return form_name, prefix_tag, [c for _, c in item_cols]
     raise SystemExit(
         "No BFI-2 item columns found (expected columns like 'BFI-2_1'). "
@@ -536,7 +606,9 @@ def check_evenodd(keyed_df, form_meta, cutoff):
         return pd.Series(np.nan, index=keyed_df.index), \
             pd.Series(False, index=keyed_df.index)
 
-    min_pairs = max(2, len(splits) // 2)
+    # ceil, not floor: "at least half" of an odd count (e.g. 15 facets)
+    # must round up (8), not down (7 -- which is LESS than half of 15).
+    min_pairs = max(2, math.ceil(len(splits) / 2))
     score = pd.Series(np.nan, index=keyed_df.index)
     for idx, row in keyed_df.iterrows():
         odd_means, even_means = [], []
@@ -669,6 +741,35 @@ def main(argv=None):
                         help=f"Speed threshold, seconds/item (default {DEFAULT_SEC_PER_ITEM}).")
     args = parser.parse_args(argv)
 
+    # Range-check thresholds so a typo (e.g. --mahal-alpha 5) doesn't
+    # silently disable a check or flag every respondent while still
+    # exiting 0. Correlation cutoffs live in [-1, 1] by definition;
+    # everything else here is a count or a probability.
+    if not (0 < args.mahal_alpha < 1):
+        raise SystemExit(
+            f"--mahal-alpha {args.mahal_alpha} must be strictly between 0 "
+            "and 1 (0 or 1 makes the chi-square cutoff degenerate -- never "
+            "or always flags)")
+    range_checks = [
+        ("--longstring-run", args.longstring_run, 1, None),
+        ("--sd-cutoff", args.sd_cutoff, 0, None),
+        ("--syn-pair-r", args.syn_pair_r, -1, 1),
+        ("--syn-cutoff", args.syn_cutoff, -1, 1),
+        ("--evenodd-cutoff", args.evenodd_cutoff, -1, 1),
+        ("--persontotal-cutoff", args.persontotal_cutoff, -1, 1),
+        ("--drip-cutoff", args.drip_cutoff, 0, None),
+        ("--sec-per-item", args.sec_per_item, 0, None),
+    ]
+    for name, value, lo, hi in range_checks:
+        # NaN/inf compare False against every bound below (a chained-
+        # comparison quirk mahal_alpha's own explicit check above doesn't
+        # share) -- reject them explicitly rather than silently pass through
+        # a value that would disable the check (inf) or behave unpredictably
+        # (NaN) while still exiting 0.
+        if not math.isfinite(value) or value < lo or (hi is not None and value > hi):
+            bound = f"[{lo}, {hi}]" if hi is not None else f">= {lo}"
+            raise SystemExit(f"{name} {value} is out of range, expected a finite value {bound}")
+
     csv_path = Path(args.csv)
     if not csv_path.exists():
         raise SystemExit(f"Input file not found: {csv_path}")
@@ -777,8 +878,31 @@ def main(argv=None):
             extra[col] = ""
     extra = extra[result.columns]
     out_df = pd.concat([extra, result], ignore_index=True)
-    out_df.to_csv(out_path, index=False)
-    print(f"\nWrote {out_path}")
+
+    # Neutralize spreadsheet-formula injection (CSV injection): a cell
+    # starting with =, +, -, @, tab, or CR is executed as a formula by
+    # Excel/Sheets if the exported CSV is later opened there. Only the
+    # ORIGINAL export's own columns are touched -- this script's own
+    # computed metric columns (which can legitimately start with "-" for
+    # a negative correlation) are never altered, or a downstream re-parse
+    # of drip_score/psychsyn_r etc. would silently see strings, not floats.
+    FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+    def neutralize(v):
+        s = str(v)
+        return "'" + s if s.startswith(FORMULA_PREFIXES) else v
+    for col in df.columns:
+        out_df[col] = out_df[col].map(neutralize)
+
+    out_sep = delimiter_for(out_path)
+    # Sibling temp file + rename: an interruption mid-write can't leave a
+    # truncated flagged export sitting at out_path.
+    out_tmp = out_path.with_suffix(out_path.suffix + ".tmp")
+    out_df.to_csv(out_tmp, index=False, sep=out_sep, encoding="utf-8")
+    out_tmp.replace(out_path)
+    fmt_note = "TSV" if out_sep == "\t" else "CSV"
+    print(f"\nWrote {out_path} ({fmt_note}, UTF-8 -- always UTF-8 regardless "
+          f"of the input's encoding; delimiter matches the output extension)")
     return 0
 
 

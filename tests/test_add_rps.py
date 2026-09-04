@@ -35,19 +35,21 @@ class TestAddRpsScoring(unittest.TestCase):
                 return g
         self.fail(f"no cell for choice {choice_id}, answer {answer_id}")
 
-    def test_reverse_item_recodes_10_minus_x(self):
-        # Choice 1 ("Safety first.") is reverse-keyed (RPS_ITEMS[0]).
-        for answer_id in range(1, 10):
-            cell = self._cell(self.main_payload, 1, answer_id)
-            self.assertEqual(
-                cell["Grades"][add_rps.RPS_CATEGORY_ID], str(10 - answer_id))
-
-    def test_normal_item_scores_1_to_1(self):
-        # Choice 4 ("I take risks regularly.") is NOT reverse-keyed.
-        for answer_id in range(1, 10):
-            cell = self._cell(self.main_payload, 4, answer_id)
-            self.assertEqual(
-                cell["Grades"][add_rps.RPS_CATEGORY_ID], str(answer_id))
+    def test_every_rps_item_reverse_status_matches_the_published_key(self):
+        # Meertens & Lion (2008): items 1/2/3/5 reverse-keyed, 4/6 not --
+        # hardcoded here independently of add_rps.RPS_ITEMS (not read from
+        # it), so this is a real regression test against the published key,
+        # not a tautology that would pass even if a reverse flag were wrong
+        # in RPS_ITEMS itself.
+        published_reverse = {1: True, 2: True, 3: True, 4: False, 5: True, 6: False}
+        self.assertEqual(len(add_rps.RPS_ITEMS), len(published_reverse))
+        for choice_id, expected_reverse in published_reverse.items():
+            for answer_id in range(1, 10):
+                cell = self._cell(self.main_payload, choice_id, answer_id)
+                expected = str(10 - answer_id) if expected_reverse else str(answer_id)
+                self.assertEqual(
+                    cell["Grades"][add_rps.RPS_CATEGORY_ID], expected,
+                    f"item {choice_id}, reverse={expected_reverse}, answer {answer_id}")
 
     def test_attention_check_only_correct_answer_scores_1(self):
         # Choice 7 is the attention-check row (7th and last row of QID100 --
@@ -113,20 +115,46 @@ class TestGenDripJs(unittest.TestCase):
 
 
 class TestGeneratedQsf(unittest.TestCase):
-    """If BFI-2_Full_RPS.qsf has been generated, sanity-check it directly
-    (skips cleanly if add_rps.py hasn't been run yet -- test_qsf_parses.py
-    covers the JSON-validity contract once it exists)."""
+    """output/BFI-2_Full_RPS.qsf is a committed deliverable (README/CLAUDE.md
+    both list it), not a build artifact -- its absence is a real failure,
+    not something to skip past."""
 
-    def test_rps_and_attention_categories_present(self):
+    @classmethod
+    def setUpClass(cls):
         import json
         qsf_path = REPO_ROOT / "output" / "BFI-2_Full_RPS.qsf"
         if not qsf_path.exists():
-            self.skipTest("output/BFI-2_Full_RPS.qsf not generated yet")
-        data = json.loads(qsf_path.read_text(encoding="utf-8"))
-        sco = next(e for e in data["SurveyElements"] if e["Element"] == "SCO")
+            raise AssertionError(
+                f"{qsf_path} is missing -- it's a committed deliverable "
+                "(see README.md/CLAUDE.md), regenerate with "
+                "`python3 .claude/skills/bfi2-qsf-splitter/add_rps.py`")
+        cls.data = json.loads(qsf_path.read_text(encoding="utf-8"))
+
+    def _sq(self, qid):
+        return next(e for e in self.data["SurveyElements"]
+                    if e["Element"] == "SQ" and e["PrimaryAttribute"] == qid)["Payload"]
+
+    def test_rps_and_attention_categories_present(self):
+        sco = next(e for e in self.data["SurveyElements"] if e["Element"] == "SCO")
         names = {c["Name"] for c in sco["Payload"]["ScoringCategories"]}
         self.assertIn("Risk Propensity", names)
         self.assertIn("Attention Check", names)
+
+    def test_committed_qid100_matches_a_fresh_regeneration(self):
+        # Not just category names: the persisted GradingData cells
+        # themselves, compared against what add_rps.py produces right now
+        # -- catches a stale/hand-edited committed file that's drifted
+        # from what the generator would actually produce today.
+        persisted = self._sq("QID100")
+        fresh = add_rps.build_main_question()
+        self.assertEqual(persisted["GradingData"], fresh["GradingData"])
+        self.assertEqual(persisted["Choices"], fresh["Choices"])
+
+    def test_committed_qid101_matches_a_fresh_regeneration(self):
+        persisted = self._sq("QID101")
+        fresh = add_rps.build_item7_question()
+        self.assertEqual(persisted["GradingData"], fresh["GradingData"])
+        self.assertEqual(persisted["Choices"], fresh["Choices"])
 
 
 if __name__ == "__main__":

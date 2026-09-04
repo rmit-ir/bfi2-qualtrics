@@ -1,21 +1,27 @@
 #!/usr/bin/env python3
-"""Ensure every .qsf file in the repo is valid, importable JSON.
+"""Ensure every .qsf file in the repo is valid, structurally-sound JSON.
 
 `.qsf` files are single-line JSON that Qualtrics is strict about. This guards
-the most basic contract: each file parses as JSON and has the top-level shape
-Qualtrics expects (`SurveyEntry` object + `SurveyElements` array). It does NOT
-check scoring correctness — that's the splitter skill's own verification.
+the basic contract: each file parses as JSON, has the top-level shape
+Qualtrics expects (`SurveyEntry` object + `SurveyElements` array), and passes
+qsf_lint.py's structural checks (IDs, cross-references, scoring). It does NOT
+check scoring correctness against the BFI-2's published key — that's the
+splitter skill's own verification (see tests/test_split_bfi2.py).
 
 Stdlib only (no pytest needed):
     python3 -m unittest discover tests
     python3 tests/test_qsf_parses.py
 """
 import json
+import sys
 import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 QSF_FILES = sorted(REPO_ROOT.rglob("*.qsf"))
+
+sys.path.insert(0, str(REPO_ROOT / ".claude" / "skills" / "qsf-tools"))
+import qsf_lint  # noqa: E402
 
 
 class TestQsfFilesParse(unittest.TestCase):
@@ -44,6 +50,14 @@ class TestQsfFilesParse(unittest.TestCase):
                 for i, el in enumerate(data["SurveyElements"]):
                     self.assertIn(
                         "Element", el, f"{rel}: SurveyElements[{i}] has no Element key")
+
+    def test_each_qsf_passes_lint(self):
+        for path in QSF_FILES:
+            rel = path.relative_to(REPO_ROOT)
+            with self.subTest(qsf=str(rel)):
+                errors, warnings = qsf_lint.lint(path)
+                self.assertEqual(errors, [], f"{rel}: qsf_lint errors: {errors}")
+                self.assertEqual(warnings, [], f"{rel}: qsf_lint warnings: {warnings}")
 
 
 if __name__ == "__main__":
