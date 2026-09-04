@@ -35,6 +35,9 @@ Participant lands (from ase2-ai-mode's Part-1 pass -> Part-2 Prolific link)
   -> JS (its own page): compute drip_score and bfi_answered client-side (see §4)
   -> Branch: attention-check score == 1 -> attention_checks_passed = true
      (only overrides the default set above; no else needed)
+  -> Embedded Data: copy __js_drip_score -> drip_score,
+     __js_bfi_answered -> bfi_answered (the plain names the Web Service
+     body reads; see §2 step 5)
   -> Web Service: POST /api/qualtrics/verdict (ase2-ai-mode)
   -> pass: redirect to next_url (Part 3)
      review: redirect to next_url (review completion code)
@@ -127,10 +130,17 @@ sets the `false` default; the branch only ever needs to flip it to `true`.
 
 ## 4. DRIP score and completeness — the one place this survey needs custom JavaScript
 
-A pairwise `|item_i − item_j|` sum, and a "how many of these 60 items got
-a real answer" count, can't be expressed in Qualtrics' native
-per-cell `GradingData` scoring (each cell only sees its own item's
-answer). Generate the snippet with:
+A pairwise `|item_i − item_j|` sum can't be expressed in Qualtrics'
+native per-cell `GradingData` scoring (each cell only sees its own
+item's answer) — DRIP genuinely needs custom JS. The "how many of these
+60 items got a real answer" count is different: it's additive, so it
+*could* be a native scoring category (1 point per answered choice,
+summed) — but adding one would mean modifying `QID2`'s `GradingData`,
+which would break the tested invariant that `QID2` in
+`BFI-2_Full_RPS.qsf` stays byte-identical to the pure `BFI-2_Full.qsf`
+(`tests/test_add_rps.py::test_qid2_unchanged_from_pure_full_form`). So it rides along in the one JS block
+DRIP already requires, rather than becoming a second native scoring
+category. Generate the snippet with:
 
 ```
 python3 .claude/skills/bfi2-qsf-splitter/gen_drip_js.py
@@ -142,7 +152,9 @@ ready-to-paste `Qualtrics.SurveyEngine.addOnload(...)` snippet using the
 *current* documented API — `setEmbeddedData()` is deprecated;
 `setJSEmbeddedData()` is its replacement and requires the target embedded
 data field to be pre-declared in Survey Flow with a `__js_` prefix (see
-§2 steps 3 and 5). The same snippet also computes `bfi_answered`: a count
+§2 step 1 for the pre-declaration/default, step 5 for the copy to the
+plain name the Web Service body reads, and step 3 for where the JS
+question itself needs to sit to guarantee it runs). The same snippet also computes `bfi_answered`: a count
 of the 60 BFI-2 items whose piped value exactly matches `/^[1-5]$/`. Paste
 the generated snippet into the "Add JavaScript"
 panel of the question on step 3's page. **Regenerate and re-paste
