@@ -32,12 +32,24 @@ The user then asked for a separate, broader task: *"review the whole repo
 of bfi2-qualtrics with sol on hard mode, try to improve it."* This is a
 whole-repo quality audit (not scoped to the diff above) — different from
 and in addition to the feature work already merged. It was **started but
-never completed**: the Sol call was launched in the background and never
-returned a response before the session was paused (no crash, no error —
-it was still legitimately network-blocked waiting on the model after
-~15+ minutes, well past how long every prior smaller call in this session
-took, e.g. iterations 1-5 above each took 30-500s). **No findings from
-this pass exist anywhere — nothing to read, nothing was skipped over.**
+never completed**: the Sol call was launched in the background and, after
+running ~17 minutes (well past how long every prior smaller call in this
+session took — iterations 1-5 above each took 30-500s), **failed with a
+confirmed `TimeoutError`** — `llm_harness.py`'s own `urllib.request
+.urlopen(req, timeout=600)` hit its 600s read timeout waiting on the
+model, no partial response, nothing salvaged. Full traceback was in the
+background task output at the time; not reproduced here, the short
+version above is everything useful in it. **No findings from this pass
+exist anywhere — nothing to read, nothing was skipped over.**
+
+The payload (~3600 lines: every `.py`/`.md` file plus the two data
+tables) was likely just too large for that 600s budget at `gpt-5.6-sol`'s
+usual latency — the diff-only reviews earlier (a few hundred lines) all
+finished well under that. **Before retrying with the identical full
+payload, consider splitting it into 2-3 smaller calls** (e.g. skills/
+scripts in one call, response_verification/ in another, docs+data in a
+third) rather than assuming a longer timeout alone fixes it — that also
+keeps any one failure from wasting the whole review's cost.
 
 ### Exact next step
 
