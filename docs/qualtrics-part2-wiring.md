@@ -214,9 +214,15 @@ unlike `QUALTRICS_SHARED_SECRET`; there is no `QUALTRICS_DRIP_CUTOFF` to
 set.
 Confirm that extension is deployed before pointing this survey's Web
 Service element at a live server, or every Part 2 submission will 422.
-When deploying, roll out the server change first, then publish this
-updated survey wiring — see `ase2-ai-mode`'s worklog entry for this
-feature for why the order matters.
+Since `bfi_answered` is **required**, not optional, neither deploy order
+is safe on its own once real traffic exists on both sides — an
+already-updated survey hitting a not-yet-updated server 422s on the
+unrecognized key, and a not-yet-updated survey hitting an already-updated
+server 422s on the now-missing required key. For this feature's initial
+rollout that's moot (nothing in this pipeline is live yet, so there's no
+existing traffic to break either way); see `ase2-ai-mode`'s worklog entry
+for this feature for the phased-rollout approach to use if this signal is
+ever added to an already-live deployment instead.
 
 ## 6. Error handling and QA checklist
 
