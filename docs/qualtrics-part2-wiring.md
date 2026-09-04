@@ -60,11 +60,14 @@ end-of-survey.
    guarantees they never are, even in the failure mode §2 step 3's
    dedicated page is meant to prevent but can't fully rule out — a
    JavaScript error, a blocked script, a future Qualtrics API change. If
-   the JS never runs at all, `__js_drip_score` and `__js_bfi_answered` now
+   the JS never runs at all — or an earlier exception in the shared
+   script (e.g. during the `drip_score` computation) prevents
+   `bfi_answered`'s own `setJSEmbeddedData` call from executing —
+   `__js_drip_score` and `__js_bfi_answered` now
    resolve to `-1` from this default — the same value the JS itself uses
    internally for `drip_score`'s own parse failures (see §4), though
    `bfi_answered` has no such in-JS sentinel of its own (it's a plain
-   incremented count, always `0`-`60` whenever the JS does run) — still
+   incremented count, always `0`-`60` whenever that call does run) — still
    valid numbers either way, still
    a normal tracked review verdict, never malformed request JSON).
 2. **Content block** — the three questions from `BFI-2_Full_RPS.qsf`,
