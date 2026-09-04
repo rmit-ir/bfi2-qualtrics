@@ -32,9 +32,12 @@ Participant lands (from ase2-ai-mode's Part-1 pass -> Part-2 Prolific link)
      default attention_checks_passed = false (Branch below has no else)
   -> Content block: 60 BFI-2 items + 7 RPS items + 1 attention-check row
      (one page, per this repo's existing single-page convention)
-  -> JS (its own page): compute drip_score client-side (see §4)
+  -> JS (its own page): compute drip_score and bfi_answered client-side (see §4)
   -> Branch: attention-check score == 1 -> attention_checks_passed = true
      (only overrides the default set above; no else needed)
+  -> Embedded Data: copy __js_drip_score -> drip_score,
+     __js_bfi_answered -> bfi_answered (the plain names the Web Service
+     body reads; see §2 step 5)
   -> Web Service: POST /api/qualtrics/verdict (ase2-ai-mode)
   -> pass: redirect to next_url (Part 3)
      review: redirect to next_url (review completion code)
@@ -49,20 +52,27 @@ end-of-survey.
 1. **Embedded Data** block — `prolific_pid` <- `${e://Field/PROLIFIC_PID}`,
    `prolific_study_id` <- `${e://Field/STUDY_ID}`, `prolific_session_id` <-
    `${e://Field/SESSION_ID}` (from the recruitment URL), and initialize
-   three defaults here: `attention_checks_passed` = `false` (Qualtrics
+   four defaults here: `attention_checks_passed` = `false` (Qualtrics
    `Branch` elements have no `else` — a variable a later branch might not
    touch must already have its fail-closed default set before that branch
-   runs; see step 4), `page_submit_seconds` = `0`, and
-   `__js_drip_score` = `-1` (both of the latter two: an unquoted
+   runs; see step 4), `page_submit_seconds` = `0`,
+   `__js_drip_score` = `-1`, and `__js_bfi_answered` = `-1` (all three of
+   the latter: an unquoted
    `${e://Field/...}` in the Web Service JSON body in §5 becomes invalid
    JSON if the field is ever blank — initializing them here is what
    guarantees they never are, even in the failure mode §2 step 3's
    dedicated page is meant to prevent but can't fully rule out — a
    JavaScript error, a blocked script, a future Qualtrics API change. If
-   the JS never runs at all, `__js_drip_score` now resolves to `-1`, the
-   same sentinel the JS itself uses for its own internal parse failures —
-   still a valid number, still a normal tracked review verdict, never
-   malformed request JSON).
+   the JS never runs at all — or an earlier exception in the shared
+   script (e.g. during the `drip_score` computation) prevents
+   `bfi_answered`'s own `setJSEmbeddedData` call from executing —
+   `__js_drip_score` and `__js_bfi_answered` now
+   resolve to `-1` from this default — the same value the JS itself uses
+   internally for `drip_score`'s own parse failures (see §4), though
+   `bfi_answered` has no such in-JS sentinel of its own (it's a plain
+   incremented count, always `0`-`60` whenever that call does run) — still
+   valid numbers either way, still
+   a normal tracked review verdict, never malformed request JSON).
 2. **Content block** — the three questions from `BFI-2_Full_RPS.qsf`,
    unchanged from how the file already lays them out (same block, one
    page): `QID2` (the 60 BFI-2 items), `QID100` (6 RPS items + the
@@ -73,7 +83,9 @@ end-of-survey.
    block on its own page (see step 3's note on why).
 3. **JavaScript block** — a real, rendered question (a Descriptive
    Text/Graphic question is fine) carrying the generated snippet (§4
-   below), on its own page directly after the content block. It must be a
+   below), on its own page directly after the content block. The snippet
+   computes both `drip_score` and `bfi_answered` in the same
+   `addOnload` handler. It must be a
    question the participant's browser actually renders — Qualtrics only
    fires a question's `addOnload` JS when that question is displayed, so
    this can't be skipped via display logic or folded into a page the
@@ -82,10 +94,11 @@ end-of-survey.
    JS *runs* — before the participant can advance to the next Survey-Flow
    element — when the page renders normally. It's still not a guarantee the
    JS *completes successfully*: a script error, a blocked script, or some
-   future Qualtrics API change could all still leave `__js_drip_score`
-   unset. Step 1's `__js_drip_score = -1` default is what actually makes
+   future Qualtrics API change could all still leave `__js_drip_score` and
+   `__js_bfi_answered`
+   unset. Step 1's `-1` defaults are what actually make
    that failure mode safe (a valid review verdict, not malformed request
-   JSON) — this page is about sequencing, not a substitute for that default.
+   JSON) — this page is about sequencing, not a substitute for those defaults.
 4. **Branch** element — `Score("Attention Check") Is Equal To 1` (a
    native Qualtrics Survey-Flow condition on the scoring category
    `add_rps.py` already created; no JavaScript needed). Qualtrics
@@ -95,8 +108,9 @@ end-of-survey.
    condition never firing at all) correctly leaves it `false` rather than
    undefined.
 5. **Embedded Data** block — `drip_score` <- `${e://Field/__js_drip_score}`
-   (copies off the `__js_`-prefixed field `setJSEmbeddedData` requires,
-   per Qualtrics' current API, into the plain name the Web Service body
+   and `bfi_answered` <- `${e://Field/__js_bfi_answered}`
+   (copies off the `__js_`-prefixed fields `setJSEmbeddedData` requires,
+   per Qualtrics' current API, into the plain names the Web Service body
    uses) and, optionally, `page_submit_seconds` from a page timer on the
    content block.
 6. **Web Service** element — see §5.
@@ -114,11 +128,19 @@ that scores every BFI-2/RPS item — so the Survey-Flow **Branch** element
 in §2 step 4 can condition directly on that score, no custom code. Step 1
 sets the `false` default; the branch only ever needs to flip it to `true`.
 
-## 4. DRIP score — the one place this survey needs custom JavaScript
+## 4. DRIP score and completeness — the one place this survey needs custom JavaScript
 
-A pairwise `|item_i − item_j|` sum can't be expressed in Qualtrics' native
-per-cell `GradingData` scoring (each cell only sees its own item's
-answer). Generate the snippet with:
+A pairwise `|item_i − item_j|` sum can't be expressed in Qualtrics'
+native per-cell `GradingData` scoring (each cell only sees its own
+item's answer) — DRIP genuinely needs custom JS. The "how many of these
+60 items got a real answer" count is different: it's additive, so it
+*could* be a native scoring category (1 point per answered choice,
+summed) — but adding one would mean modifying `QID2`'s `GradingData`,
+which would break the tested invariant that `QID2` in
+`BFI-2_Full_RPS.qsf` stays byte-identical to the pure `BFI-2_Full.qsf`
+(`tests/test_add_rps.py::test_qid2_unchanged_from_pure_full_form`). So it rides along in the one JS block
+DRIP already requires, rather than becoming a second native scoring
+category. Generate the snippet with:
 
 ```
 python3 .claude/skills/bfi2-qsf-splitter/gen_drip_js.py
@@ -130,10 +152,16 @@ ready-to-paste `Qualtrics.SurveyEngine.addOnload(...)` snippet using the
 *current* documented API — `setEmbeddedData()` is deprecated;
 `setJSEmbeddedData()` is its replacement and requires the target embedded
 data field to be pre-declared in Survey Flow with a `__js_` prefix (see
-§2 steps 3 and 5). Paste the generated snippet into the "Add JavaScript"
+§2 step 1 for the pre-declaration/default, step 5 for the copy to the
+plain name the Web Service body reads, and step 3 for where the JS
+question itself needs to sit to guarantee it runs). The same snippet also computes `bfi_answered`: a count
+of the 60 BFI-2 items whose piped value exactly matches `/^[1-5]$/`. Paste
+the generated snippet into the "Add JavaScript"
 panel of the question on step 3's page. **Regenerate and re-paste
-whenever `drip_item_pairs.tsv` changes** — there's no automated sync
-between the qsf and the offline tool's pair table.
+whenever `drip_item_pairs.tsv` changes, or whenever `gen_drip_js.py`'s own
+generation logic changes** — there's no automated sync
+between the qsf and the offline tool's pair table, or between the qsf and
+this generator script.
 
 The generated snippet sentinels a failed `parseInt` (an unanswered item —
 BFI-2's `ForceResponse` is a soft prompt, not a hard requirement, so this
@@ -146,12 +174,15 @@ can act on). A non-finite value (`NaN`/`Infinity`), by contrast, *is*
 hard-rejected with a 422, specifically because it can't be recorded as a
 meaningful score at all — but the endpoint handles that entirely
 server-side; the point of the `-1` sentinel is to keep the JS from ever
-producing that non-finite value in the first place.
+producing that non-finite value in the first place. `bfi_answered` can't
+itself be `NaN` (it's a count, only ever incremented), so it needs no
+matching in-JS sentinel — an unanswered item there just doesn't increment
+the count, same as any other missing item.
 
 ## 5. Web Service element configuration
 
-Per `ase2-ai-mode`'s `docs/qualtrics-integration-spec.md` §5, with one
-addition — `drip_score` in `extra_signals`:
+Per `ase2-ai-mode`'s `docs/qualtrics-integration-spec.md` §5, with two
+additions — `drip_score` and `bfi_answered` in `extra_signals`:
 
 - **Method:** POST
 - **URL:** `https://<server-host>/api/qualtrics/verdict`
@@ -165,33 +196,35 @@ addition — `drip_score` in `extra_signals`:
     "part": "personality",
     "attention_checks_passed": ${e://Field/attention_checks_passed},
     "duration_seconds": ${e://Field/page_submit_seconds},
-    "extra_signals": { "drip_score": ${e://Field/drip_score} }
+    "extra_signals": { "drip_score": ${e://Field/drip_score}, "bfi_answered": ${e://Field/bfi_answered} }
   }
   ```
 - **Response mapping** -> `verdict`, `next_url`, `completion_code` (same as
   the sibling spec).
 
-`drip_score` and `duration_seconds` are both unquoted in the body above
+`drip_score`, `bfi_answered`, and `duration_seconds` are all unquoted in the body above
 (JSON numbers, not piped strings) — an unquoted `${e://Field/...}` that
 ever resolves blank produces invalid JSON (`"duration_seconds": ,`), so
-both fields are only safe because they're guaranteed non-blank. That
+all three fields are only safe because they're guaranteed non-blank. That
 guarantee comes from step 1's defaults (`page_submit_seconds = 0`,
-`__js_drip_score = -1`), not from the JS being trusted to run — §2 step 3
+`__js_drip_score = -1`, `__js_bfi_answered = -1`), not from the JS being trusted to run — §2 step 3
 makes the JS run under normal conditions, and when it does, the generated
-snippet itself never leaves the field empty or non-numeric (it sentinels a
-parse failure to `-1` rather than `NaN` — see §4), but the *field never
+snippet itself never leaves either field empty or non-numeric (it sentinels a
+`drip_score` parse failure to `-1` rather than `NaN`, and `bfi_answered` can
+never be non-numeric since it's a plain incremented count — see §4), but the *field never
 being blank* guarantee is the default's job, precisely because JS
 execution itself can't be guaranteed. Don't copy this unquoted style to a
 field without that same default-initialization.
 
-`drip_score` requires the `ase2-ai-mode` extension described in this
-repo's plan for this feature: `drip_score` added to
-`_ALLOWED_EXTRA_SIGNAL_KEYS`, **required** (422 if missing) for
+`drip_score` and `bfi_answered` require the `ase2-ai-mode` extension described in this
+repo's plan for this feature: both keys added to
+`_ALLOWED_EXTRA_SIGNAL_KEYS`, each **required** (422 if missing) for
 `part="personality"` and **rejected** (422 if present, including an
-explicit `null`) for `part="demographics"`; must be a finite whole number
-(422 if a boolean, `NaN`/`Infinity`, or a fraction). A well-formed value
+explicit `null`) for `part="demographics"`; each must be a finite whole number
+(422 if a boolean, `NaN`/`Infinity`, or a fraction). A well-formed `drip_score`
 outside `[0, config.qualtrics.drip_cutoff)` (including the `-1` sentinel
-above) is **not** a 422 — it's a normal `review` verdict with its own
+above), or a well-formed `bfi_answered` other than exactly `60` (including
+`-1`, or any value below 60), is **not** a 422 — it's a normal `review` verdict with its own
 tracked CMS row, same as a failed attention check. `drip_cutoff` is a
 plain config default of `14.0`, bounded to `[0, 60]` at startup, matching
 `verify_responses.py --drip-cutoff`'s own default — **not** an env var,
@@ -199,6 +232,15 @@ unlike `QUALTRICS_SHARED_SECRET`; there is no `QUALTRICS_DRIP_CUTOFF` to
 set.
 Confirm that extension is deployed before pointing this survey's Web
 Service element at a live server, or every Part 2 submission will 422.
+Since `bfi_answered` is **required**, not optional, neither deploy order
+is safe on its own once real traffic exists on both sides — an
+already-updated survey hitting a not-yet-updated server 422s on the
+unrecognized key, and a not-yet-updated survey hitting an already-updated
+server 422s on the now-missing required key. For this feature's initial
+rollout that's moot (nothing in this pipeline is live yet, so there's no
+existing traffic to break either way); see `ase2-ai-mode`'s worklog entry
+for this feature for the phased-rollout approach to use if this signal is
+ever added to an already-live deployment instead.
 
 ## 6. Error handling and QA checklist
 
@@ -212,7 +254,7 @@ Before enabling for real recruitment, in addition to that checklist:
       agree/disagree across a DRIP pair's two items) in preview — confirm
       `drip_score` rises and, once ≥ the configured cutoff, routes to
       review even with a correct attention-check answer.
-- [ ] Confirm `${e://Field/__js_drip_score}` populates before the Embedded
+- [ ] Confirm `${e://Field/__js_drip_score}` and `${e://Field/__js_bfi_answered}` populate before the Embedded
       Data copy step runs — this is exactly what putting the JS question on
       its own page (§2 step 3) is for; verify it in preview, don't assume
       the page split alone guarantees it.
@@ -221,11 +263,21 @@ Before enabling for real recruitment, in addition to that checklist:
       `-1`, not blank/`NaN` — the endpoint treats `-1` as a normal review
       verdict (200, not a 422), and a `quality-verdicts` row should appear
       in the CMS for it, same as a failed attention check.
+- [ ] Skip one item in the content block and confirm `bfi_answered`
+      arrives as `59`, not `60`, and that the verdict is `review`. Skip
+      none and confirm `bfi_answered` arrives as `60` and this signal no
+      longer forces `review`.
 - [ ] Disable JavaScript for the preview (or otherwise force the JS
-      question in §2 step 3 to never run) and confirm `drip_score` still
-      arrives as `-1`, not blank — this is what step 1's
-      `__js_drip_score = -1` default is for; a valid JSON request should
+      question in §2 step 3 to never run) and confirm `drip_score` and
+      `bfi_answered` still
+      arrive as `-1`, not blank — this is what step 1's
+      `-1` defaults are for; a valid JSON request should
       still reach the Web Service call and get a normal review verdict.
+- [ ] Complete the content block, advance past it, then use Qualtrics'
+      preview back-navigation to return and change an answer. Confirm the
+      JS block recomputes and overwrites both `__js_drip_score` and
+      `__js_bfi_answered` with the updated values rather than keeping the
+      first-pass value.
 - [ ] Hand-verify one reverse-keyed RPS item and the Risk Propensity total
       against `output/BFI-2_Full_RPS.qsf`'s score report, same spot-check
       method as `.claude/skills/bfi2-qsf-splitter/SKILL.md` already

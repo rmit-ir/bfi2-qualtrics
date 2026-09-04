@@ -114,6 +114,22 @@ class TestGenDripJs(unittest.TestCase):
             rows = list(csv.DictReader(f, delimiter="\t"))
         self.assertEqual(len(rows), 15)
 
+    def test_bfi_answered_pipes_exactly_items_1_through_60_in_order(self):
+        match = re.search(r"var bfiRaw = \[(.*?)\];", self.js)
+        self.assertIsNotNone(match, "bfiRaw array not found in generated JS")
+        # Full quoted-string entries, not just the digits inside them -- a
+        # findall on the digit pattern alone would still pass if the array
+        # also contained extra, non-matching, or malformed entries.
+        entries = re.findall(r'"([^"]*)"', match.group(1))
+        expected = [gen_drip_js.piped(i) for i in range(1, 61)]
+        self.assertEqual(entries, expected)
+
+    def test_bfi_answered_uses_exact_regex_match_not_permissive_parseint(self):
+        self.assertIn("/^[1-5]$/.test(bfiRaw[i])", self.js)
+
+    def test_bfi_answered_sets_embedded_data(self):
+        self.assertIn('setJSEmbeddedData("bfi_answered", bfiAnswered)', self.js)
+
 
 class TestGeneratedQsf(unittest.TestCase):
     """output/BFI-2_Full_RPS.qsf is a committed deliverable (README/CLAUDE.md
