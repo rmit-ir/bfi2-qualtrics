@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
-"""Generate the client-side DRIP-score JavaScript snippet for Qualtrics.
+"""Generate the client-side DRIP-score + completeness JavaScript for Qualtrics.
 
 Reads ../../../response_verification/drip_item_pairs.tsv (the single source
 of truth also used by verify_responses.py's check_drip()) and prints a
-ready-to-paste "Add JavaScript" snippet that computes the same score --
-sum of |item1 - item2| over the 15 pairs, each reverse-keyed item recoded
-6-x first -- entirely client-side, using the current (non-deprecated)
-Qualtrics.SurveyEngine.setJSEmbeddedData() API. See ../../../docs/
-qualtrics-part2-wiring.md for where this snippet goes.
+ready-to-paste "Add JavaScript" snippet that computes, entirely client-side,
+using the current (non-deprecated) Qualtrics.SurveyEngine.setJSEmbeddedData()
+API:
+  - drip_score: sum of |item1 - item2| over the 15 pairs, each reverse-keyed
+    item recoded 6-x first.
+  - bfi_answered: count of the 60 BFI-2 items that got a real 1-5 answer.
+See ../../../docs/qualtrics-part2-wiring.md for where this snippet goes.
 
-Regenerate and re-paste this whenever drip_item_pairs.tsv changes.
+Regenerate and re-paste this whenever drip_item_pairs.tsv changes, or
+whenever this script's own generation logic changes.
 
 Usage:
     python3 gen_drip_js.py
@@ -23,6 +26,7 @@ SKILL_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SKILL_DIR.parent.parent.parent
 PAIRS_FILE = REPO_ROOT / "response_verification" / "drip_item_pairs.tsv"
 FULL_QSF = REPO_ROOT / "output" / "BFI-2_Full.qsf"
+EXPECTED_BFI_ITEMS = 60
 
 sys.path.insert(0, str(SKILL_DIR))
 # split_bfi2 (not verify_responses) deliberately -- it's stdlib-only, and
@@ -139,6 +143,23 @@ def render(pairs):
     lines.append("    // Embedded Data element copies it to 'drip_score' via piped text -- see")
     lines.append("    // docs/qualtrics-part2-wiring.md).")
     lines.append("    Qualtrics.SurveyEngine.setJSEmbeddedData(\"drip_score\", drip);")
+    lines.append("")
+    lines.append("    // BFI-2 completeness count -- how many of the 60 items got a real")
+    lines.append("    // 1-5 answer. Exact regex match, not parseInt: parseInt(\"1x\", 10) is 1,")
+    lines.append("    // which would wrongly count a malformed value as answered. This counter")
+    lines.append("    // only needs a yes/no per item, not the numeric value, so the stricter")
+    lines.append("    // check is a clean fit here (unlike the DRIP sums above, which need the")
+    lines.append("    // actual value for arithmetic).")
+    lines.append("    var bfiAnswered = 0;")
+    bfi_items = ", ".join(f"\"{piped(i)}\"" for i in range(1, EXPECTED_BFI_ITEMS + 1))
+    lines.append(f"    var bfiRaw = [{bfi_items}];")
+    lines.append("    for (var i = 0; i < bfiRaw.length; i++) {")
+    lines.append("        if (/^[1-5]$/.test(bfiRaw[i])) { bfiAnswered++; }")
+    lines.append("    }")
+    lines.append("    // Embedded data field must be declared in Survey Flow as")
+    lines.append("    // '__js_bfi_answered' -- same '__js_' prefix / copy-step pattern as")
+    lines.append("    // drip_score above.")
+    lines.append("    Qualtrics.SurveyEngine.setJSEmbeddedData(\"bfi_answered\", bfiAnswered);")
     lines.append("});")
     return "\n".join(lines)
 
