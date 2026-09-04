@@ -47,8 +47,12 @@ The source survey and the official reference documents (published-form PDFs,
 SPSS syntax) are **not** in this repo — it ships only the finished, scored
 outputs plus tooling. Regenerating `output/` therefore requires supplying the
 unified source `.qsf` as input to the splitter (see below); it can't run from
-repo contents alone. Verify scoring questions against the official BFI-2 forms,
-not by fetching — the Colby site returns HTTP 403 to non-browser clients.
+repo contents alone. Get it from the
+[Colby Personality Lab](https://www.colby.edu/academics/departments-and-programs/psychology/research-opportunities/personality-lab/the-bfi-2/)
+— download it manually in a real browser (the site returns HTTP 403 to
+non-browser clients, so `curl`/`WebFetch`/automated tooling can't fetch it;
+this also applies to fetching the official reference PDFs/SPSS syntax to
+verify scoring questions against).
 
 The BFI-2 and its item content are the work of Christopher J. Soto and Oliver
 P. John; the original Qualtrics `.qsf` this repo's outputs derive from came from

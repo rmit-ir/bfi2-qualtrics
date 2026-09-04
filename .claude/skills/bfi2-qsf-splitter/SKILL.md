@@ -35,7 +35,10 @@ python3 .claude/skills/bfi2-qsf-splitter/split_bfi2.py <input.qsf>
 
 `<input.qsf>` is a unified BFI-2 survey containing the Full (QID2), Short
 (QID3), and Extra-Short (QID4) forms as separate blocks — supply the path; it
-is not bundled in this repo. Writes `BFI-2_Full.qsf`, `BFI-2_Short.qsf`,
+is not bundled in this repo. Get it from the
+[Colby Personality Lab](https://www.colby.edu/academics/departments-and-programs/psychology/research-opportunities/personality-lab/the-bfi-2/)
+— download manually in a browser (the site 403s automated clients).
+Writes `BFI-2_Full.qsf`, `BFI-2_Short.qsf`,
 `BFI-2_ExtraShort.qsf` to `output/` (repo root, regardless of the current
 working directory — run it from anywhere). Expected output:
 
