@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Ensure every .qsf file in the repo is valid, structurally-sound JSON.
 
-`.qsf` files are single-line JSON that Qualtrics is strict about. This guards
-the basic contract: each file parses as JSON, has the top-level shape
+`.qsf` files are valid JSON that Qualtrics is strict about -- single-line is
+this repo's own writing convention, not a Qualtrics requirement (it accepts
+pretty-printed files too; see CLAUDE.md). This guards the basic contract:
+each file parses as JSON, has the top-level shape
 Qualtrics expects (`SurveyEntry` object + `SurveyElements` array), and passes
 qsf_lint.py's structural checks (IDs, cross-references, scoring). It does NOT
 check scoring correctness against the BFI-2's published key — that's the

@@ -142,6 +142,21 @@ EXPECTED_N_ITEMS = {"full": 60, "short": 30, "extra-short": 15}
 
 DURATION_COL = "Duration (in seconds)"
 
+# Every column name this script ever adds to its output. If an INPUT export
+# already has one of these (most plausibly: re-running the script against
+# its own previously flagged output), the formula-neutralization step below
+# would sanitize this script's own computed metrics as if they were
+# original respondent data -- e.g. quoting a genuine negative correlation
+# like "-0.53" into the string "'-0.53". Reject that input shape outright
+# instead.
+RESERVED_OUTPUT_COLUMNS = {
+    "longstring_max", "response_sd", "mahal_d2", "psychsyn_r",
+    "person_total_r", "evenodd_r", "drip_score",
+    "flag_incomplete", "flag_speed", "flag_longstring", "flag_variance",
+    "flag_mahalanobis", "flag_psychsyn", "flag_persontotal", "flag_evenodd",
+    "flag_drip", "Careless_Flags",
+}
+
 # Cutoffs. Sources: sec/item and syn-pair-r are from the literature (Bowling
 # et al. 2016; Meade & Craig 2012); drip-cutoff is the sensitive end of
 # Ruchensky et al.'s recommended 14-17 range. The remaining score cutoffs are
@@ -352,6 +367,20 @@ def detect_form(columns):
             item_cols.sort()
             numbers = [n for n, _ in item_cols]
             expected = set(range(1, EXPECTED_N_ITEMS[form_name] + 1))
+            # set(numbers) == expected alone would accept a duplicate
+            # numeric ID (e.g. both "BFI-2_1" and "BFI-2_01" parse to item
+            # 1) as long as the SET still covers 1..N -- also check the
+            # count, or a later dict keyed by item number
+            # (recode_items -- {num: df[col]...}) would silently drop one
+            # of the two columns' data.
+            if len(numbers) != len(set(numbers)):
+                from collections import Counter
+                dupes = sorted(n for n, c in Counter(numbers).items() if c > 1)
+                raise SystemExit(
+                    f"{prefix_tag}_ columns include duplicate item number(s) "
+                    f"{dupes} (e.g. both '{prefix_tag}_{dupes[0]}' and "
+                    f"'{prefix_tag}_0{dupes[0]}' parsing to the same item) "
+                    "-- fix the export's column names before scoring.")
             if set(numbers) != expected:
                 missing = sorted(expected - set(numbers))
                 extra = sorted(set(numbers) - expected)
@@ -780,6 +809,13 @@ def main(argv=None):
     cross_validate_pairs(pairs, full_meta)
 
     df, header_rows, sep, encoding = read_export(csv_path)
+    collision = RESERVED_OUTPUT_COLUMNS & set(df.columns)
+    if collision:
+        raise SystemExit(
+            f"{csv_path}: already has column(s) {sorted(collision)} that "
+            "this script itself would add -- looks like an already-flagged "
+            "output, not a fresh Qualtrics export. Re-run against the "
+            "original export instead.")
     form_name, prefix_tag, item_cols = detect_form(df.columns)
     mode = infer_export_mode(df, item_cols)
     numeric_df, item_numbers = recode_items(df, item_cols, mode)
@@ -893,6 +929,26 @@ def main(argv=None):
         return "'" + s if s.startswith(FORMULA_PREFIXES) else v
     for col in df.columns:
         out_df[col] = out_df[col].map(neutralize)
+    # The header row is itself a CSV cell: a source export with a column
+    # name (DataExportTag) starting with one of these characters would
+    # otherwise still produce a formula-capable header. Column names are
+    # normally researcher-, not respondent-, controlled -- lower risk than
+    # the data cells above -- but cheap to close given the mechanism's
+    # already here.
+    header_map = {c: neutralize(c) for c in df.columns}
+    sanitized_names = list(header_map.values())
+    if len(sanitized_names) != len(set(sanitized_names)):
+        # e.g. source columns "=foo" and "'=foo" both sanitize to "'=foo" --
+        # exceedingly unlikely for a real Qualtrics export, but silently
+        # emitting two identically-named output columns is worse than
+        # refusing to guess which is which.
+        from collections import Counter
+        dupes = sorted(n for n, c in Counter(sanitized_names).items() if c > 1)
+        raise SystemExit(
+            f"{csv_path}: column name(s) {dupes} collide after formula-"
+            "injection sanitization -- rename the conflicting source "
+            "column(s) before running this script.")
+    out_df = out_df.rename(columns=header_map)
 
     out_sep = delimiter_for(out_path)
     # Sibling temp file + rename: an interruption mid-write can't leave a

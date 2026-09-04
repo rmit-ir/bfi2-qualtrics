@@ -43,10 +43,17 @@ Writes `BFI-2_Full.qsf`, `BFI-2_Short.qsf`,
 working directory — run it from anywhere). Expected output:
 
 ```
-Wrote BFI-2_Full.qsf (QID2): 60 items scored, 5 domain + 15 facet categories
-Wrote BFI-2_Short.qsf (QID3): 30 items scored, 5 domain + 15 facet categories
-Wrote BFI-2_ExtraShort.qsf (QID4): 15 items scored, 5 domain + no facet categories
+Built BFI-2_Full.qsf (QID2): 60 items scored, 5 domain + 15 facet categories
+Built BFI-2_Short.qsf (QID3): 30 items scored, 5 domain + 15 facet categories
+Built BFI-2_ExtraShort.qsf (QID4): 15 items scored, 5 domain + no facet categories
+Wrote BFI-2_Full.qsf
+Wrote BFI-2_Short.qsf
+Wrote BFI-2_ExtraShort.qsf
 ```
+
+("Built" confirms each form scored correctly in memory; "Wrote" only
+prints once that form's file is actually on disk — the two are separate
+lines because nothing is written until every form has built successfully.)
 
 The script asserts internal invariants (per-domain/facet item counts, one/two
 `Grades` keys per item, every referenced category defined in `SCO`) and exits

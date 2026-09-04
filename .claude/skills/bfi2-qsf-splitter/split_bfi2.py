@@ -442,7 +442,11 @@ def main():
     # updated, 1 left stale," which is what per-form gating alone allows.
     for form, qsf, matched_count, category_count, unmatched in built:
         facet_note = f"{category_count - 5} facet" if form["facets"] else "no facet"
-        status = "UNMATCHED items" if unmatched else ("would write" if any_unmatched else "Wrote")
+        # "Built", not "Wrote" -- nothing has touched disk yet at this point
+        # (see the commit phase below); printing "Wrote" here would be a
+        # false success message if a later write/rename in this same run
+        # fails.
+        status = "UNMATCHED items" if unmatched else "Built"
         print(f"{status} {form['output_file']} ({form['question_id']}): {matched_count} items scored, "
               f"5 domain + {facet_note} categories")
         if unmatched:
@@ -459,15 +463,23 @@ def main():
               "characters before rerunning.")
         sys.exit(1)
 
-    # Two-phase commit: write every form's JSON to its own .tmp file first,
-    # and only rename any of them into place once every write below has
-    # succeeded -- an I/O failure partway through (disk full on form 2 of
-    # 3) must not leave form 1 updated and forms 2-3 stale.
+    # Write every form's JSON to its own .tmp file first, and only start
+    # renaming once every write above has succeeded -- an I/O failure
+    # DURING a write (disk full on form 2 of 3) can't leave form 1 updated
+    # and forms 2-3 stale. NOT a true cross-file transaction, though: the
+    # three renames below are still sequential syscalls, each individually
+    # atomic but not as a group -- a process kill between rename 1 and
+    # rename 2 (a vanishingly small window; renames are near-instant,
+    # no I/O in between) would leave a mixed set. Accepted residual risk
+    # for this repo rather than the added complexity of a directory-swap
+    # scheme, given how narrow that window is.
     OUTPUT_DIR.mkdir(exist_ok=True)
     to_commit = [(_write_temp_json(form["output_path"], qsf), form["output_path"])
                  for form, qsf, _, _, _ in built]
     for tmp, output_path in to_commit:
         tmp.replace(output_path)
+    for _, output_path in to_commit:
+        print(f"Wrote {output_path.name}")
 
 
 if __name__ == "__main__":

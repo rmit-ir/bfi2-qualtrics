@@ -48,14 +48,21 @@ end-of-survey.
 
 1. **Embedded Data** block — `prolific_pid` <- `${e://Field/PROLIFIC_PID}`,
    `prolific_study_id` <- `${e://Field/STUDY_ID}`, `prolific_session_id` <-
-   `${e://Field/SESSION_ID}` (from the recruitment URL), and initialize two
-   defaults here: `attention_checks_passed` = `false` (Qualtrics `Branch`
-   elements have no `else` — a variable a later branch might not touch must
-   already have its fail-closed default set before that branch runs; see
-   step 4) and `page_submit_seconds` = `0` (an unquoted `${e://Field/...}`
-   in the Web Service JSON body in §5 becomes invalid JSON if the field is
-   ever blank — initializing it here, same as `attention_checks_passed`,
-   is what guarantees it never is).
+   `${e://Field/SESSION_ID}` (from the recruitment URL), and initialize
+   three defaults here: `attention_checks_passed` = `false` (Qualtrics
+   `Branch` elements have no `else` — a variable a later branch might not
+   touch must already have its fail-closed default set before that branch
+   runs; see step 4), `page_submit_seconds` = `0`, and
+   `__js_drip_score` = `-1` (both of the latter two: an unquoted
+   `${e://Field/...}` in the Web Service JSON body in §5 becomes invalid
+   JSON if the field is ever blank — initializing them here is what
+   guarantees they never are, even in the failure mode §2 step 3's
+   dedicated page is meant to prevent but can't fully rule out — a
+   JavaScript error, a blocked script, a future Qualtrics API change. If
+   the JS never runs at all, `__js_drip_score` now resolves to `-1`, the
+   same sentinel the JS itself uses for its own internal parse failures —
+   still a valid number, still a normal tracked review verdict, never
+   malformed request JSON).
 2. **Content block** — the three questions from `BFI-2_Full_RPS.qsf`,
    unchanged from how the file already lays them out (same block, one
    page): `QID2` (the 60 BFI-2 items), `QID100` (6 RPS items + the
@@ -72,8 +79,13 @@ end-of-survey.
    this can't be skipped via display logic or folded into a page the
    participant never sees. Putting it on its own single-question page
    (rather than sharing a page with anything else) is what guarantees the
-   JS has run — and `setJSEmbeddedData` completed — before the participant
-   can advance to the next Survey-Flow element.
+   JS *runs* — before the participant can advance to the next Survey-Flow
+   element — when the page renders normally. It's still not a guarantee the
+   JS *completes successfully*: a script error, a blocked script, or some
+   future Qualtrics API change could all still leave `__js_drip_score`
+   unset. Step 1's `__js_drip_score = -1` default is what actually makes
+   that failure mode safe (a valid review verdict, not malformed request
+   JSON) — this page is about sequencing, not a substitute for that default.
 4. **Branch** element — `Score("Attention Check") Is Equal To 1` (a
    native Qualtrics Survey-Flow condition on the scoring category
    `add_rps.py` already created; no JavaScript needed). Qualtrics
@@ -162,14 +174,15 @@ addition — `drip_score` in `extra_signals`:
 `drip_score` and `duration_seconds` are both unquoted in the body above
 (JSON numbers, not piped strings) — an unquoted `${e://Field/...}` that
 ever resolves blank produces invalid JSON (`"duration_seconds": ,`), so
-both fields are only safe because they're guaranteed non-blank: §2 step 1
-initializes `page_submit_seconds` to `0` before it's ever read, and
-`drip_score` is guaranteed set by the time this element runs because §2
-step 3 forces the JS to actually execute (a dedicated page) and the
-generated snippet itself never leaves the field empty or non-numeric (it
-sentinels a parse failure to `-1` rather than `NaN` — see §4). Don't copy
-this unquoted style to a field without that same default-initialization
-guarantee.
+both fields are only safe because they're guaranteed non-blank. That
+guarantee comes from step 1's defaults (`page_submit_seconds = 0`,
+`__js_drip_score = -1`), not from the JS being trusted to run — §2 step 3
+makes the JS run under normal conditions, and when it does, the generated
+snippet itself never leaves the field empty or non-numeric (it sentinels a
+parse failure to `-1` rather than `NaN` — see §4), but the *field never
+being blank* guarantee is the default's job, precisely because JS
+execution itself can't be guaranteed. Don't copy this unquoted style to a
+field without that same default-initialization.
 
 `drip_score` requires the `ase2-ai-mode` extension described in this
 repo's plan for this feature: `drip_score` added to
@@ -208,6 +221,11 @@ Before enabling for real recruitment, in addition to that checklist:
       `-1`, not blank/`NaN` — the endpoint treats `-1` as a normal review
       verdict (200, not a 422), and a `quality-verdicts` row should appear
       in the CMS for it, same as a failed attention check.
+- [ ] Disable JavaScript for the preview (or otherwise force the JS
+      question in §2 step 3 to never run) and confirm `drip_score` still
+      arrives as `-1`, not blank — this is what step 1's
+      `__js_drip_score = -1` default is for; a valid JSON request should
+      still reach the Web Service call and get a normal review verdict.
 - [ ] Hand-verify one reverse-keyed RPS item and the Risk Propensity total
       against `output/BFI-2_Full_RPS.qsf`'s score report, same spot-check
       method as `.claude/skills/bfi2-qsf-splitter/SKILL.md` already

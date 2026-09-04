@@ -378,6 +378,39 @@ class TestSafetyFeatures(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 self.mod.main([str(src), "--syn-pair-r", "2"])
 
+    def test_reprocessing_own_output_rejected(self):
+        # Feeding this script's own previously-flagged output back in as
+        # input must be rejected outright, not silently sanitize its own
+        # computed metric columns (a negative correlation) as if they were
+        # respondent data.
+        with tempfile.TemporaryDirectory() as d:
+            src = self._write(d)
+            rows = list(csv.reader(open(src, newline="", encoding="utf-8")))
+            rows[0].append("psychsyn_r")  # a reserved output column name
+            for i, row in enumerate(rows[3:], start=3):
+                row.append("-0.5")
+            with open(src, "w", newline="", encoding="utf-8") as f:
+                csv.writer(f).writerows(rows)
+            with self.assertRaises(SystemExit):
+                self.mod.main([str(src)])
+
+    def test_duplicate_item_number_columns_rejected(self):
+        # "BFI-2_1" and "BFI-2_01" both parse to item 1 -- set(numbers)
+        # alone would miss this (still covers 1..60), silently dropping
+        # one column's data downstream. Must be rejected explicitly.
+        with tempfile.TemporaryDirectory() as d:
+            src = Path(d) / "export.csv"
+            write_synthetic_export(src, self._one_respondent())
+            rows = list(csv.reader(open(src, newline="", encoding="utf-8")))
+            item1_idx = rows[0].index("BFI-2_1")
+            for row in rows:
+                row.insert(item1_idx + 1, row[item1_idx])  # duplicate column
+            rows[0][item1_idx + 1] = "BFI-2_01"
+            with open(src, "w", newline="", encoding="utf-8") as f:
+                csv.writer(f).writerows(rows)
+            with self.assertRaises(SystemExit):
+                self.mod.main([str(src)])
+
     def test_malformed_header_rejected(self):
         with tempfile.TemporaryDirectory() as d:
             src = Path(d) / "bad.csv"
@@ -432,6 +465,21 @@ class TestSafetyFeatures(unittest.TestCase):
             import pandas as pd
             out_df = pd.read_csv(out, skiprows=[1, 2], dtype=str)
             self.assertTrue(out_df.iloc[0]["StartDate"].startswith("'="))
+
+    def test_formula_injection_neutralized_in_header(self):
+        # The header row is itself a CSV cell -- a poisoned column name
+        # (DataExportTag) must be neutralized too, not just data cells.
+        with tempfile.TemporaryDirectory() as d:
+            src = self._write(d)
+            rows = list(csv.reader(open(src, newline="", encoding="utf-8")))
+            rows[0][rows[0].index("StartDate")] = "=cmd|'/c calc'!A1"
+            with open(src, "w", newline="", encoding="utf-8") as f:
+                csv.writer(f).writerows(rows)
+            out = Path(d) / "flagged.csv"
+            rc = self.mod.main([str(src), "-o", str(out)])
+            self.assertEqual(rc, 0)
+            header = out.read_text(encoding="utf-8").splitlines()[0]
+            self.assertIn("'=cmd", header)
 
 
 @unittest.skipUnless(HAVE_DEPS, "pandas/numpy/scipy not installed")

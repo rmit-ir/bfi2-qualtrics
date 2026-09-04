@@ -11,6 +11,7 @@ Stdlib only (no pytest needed):
     python3 -m unittest discover tests
 """
 import csv
+import json
 import re
 import sys
 import unittest
@@ -141,20 +142,32 @@ class TestGeneratedQsf(unittest.TestCase):
         self.assertIn("Attention Check", names)
 
     def test_committed_qid100_matches_a_fresh_regeneration(self):
-        # Not just category names: the persisted GradingData cells
-        # themselves, compared against what add_rps.py produces right now
-        # -- catches a stale/hand-edited committed file that's drifted
-        # from what the generator would actually produce today.
-        persisted = self._sq("QID100")
-        fresh = add_rps.build_main_question()
-        self.assertEqual(persisted["GradingData"], fresh["GradingData"])
-        self.assertEqual(persisted["Choices"], fresh["Choices"])
+        # The WHOLE persisted payload -- not just GradingData/Choices, so
+        # this also catches a drifted Answers/AnswerOrder scale (a real,
+        # dangerous class of bug: reordered/relabeled answer options would
+        # silently invert or misdisplay RPS scoring without touching
+        # GradingData at all) -- compared against what add_rps.py produces
+        # right now, catching a stale/hand-edited committed file.
+        self.assertEqual(self._sq("QID100"), add_rps.build_main_question())
 
     def test_committed_qid101_matches_a_fresh_regeneration(self):
-        persisted = self._sq("QID101")
-        fresh = add_rps.build_item7_question()
-        self.assertEqual(persisted["GradingData"], fresh["GradingData"])
-        self.assertEqual(persisted["Choices"], fresh["Choices"])
+        self.assertEqual(self._sq("QID101"), add_rps.build_item7_question())
+
+    def test_qid2_unchanged_from_pure_full_form(self):
+        # add_rps.py's docstring promises BFI-2_Full.qsf's own QID2 is left
+        # untouched -- assert the RPS file's QID2 payload is byte-for-byte
+        # identical to the pure Full form's, not just "still present."
+        full_qsf = json.loads((REPO_ROOT / "output" / "BFI-2_Full.qsf").read_text(encoding="utf-8"))
+        full_qid2 = next(e for e in full_qsf["SurveyElements"]
+                         if e["Element"] == "SQ" and e["PrimaryAttribute"] == "QID2")["Payload"]
+        self.assertEqual(self._sq("QID2"), full_qid2)
+
+    def test_qid100_and_qid101_appended_to_the_content_block(self):
+        bl = next(e for e in self.data["SurveyElements"] if e["Element"] == "BL")
+        # Ordered list, not a set: also catches QID101 appended before
+        # QID100, or either appearing twice.
+        qids_in_block = [be["QuestionID"] for be in bl["Payload"][0]["BlockElements"]]
+        self.assertEqual(qids_in_block, ["QID2", add_rps.QID_MAIN, add_rps.QID_ITEM7])
 
 
 if __name__ == "__main__":
