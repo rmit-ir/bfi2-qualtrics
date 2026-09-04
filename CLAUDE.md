@@ -92,9 +92,15 @@ with the expected top-level shape. Run it after editing any `.qsf`.
   directory) layers the Risk Propensity Scale + an attention-check item onto
   `output/BFI-2_Full.qsf` to produce `BFI-2_Full_RPS.qsf`, reusing the same
   `GradingData`/`SCO` scoring mechanism. `gen_drip_js.py` (same directory)
-  generates the client-side DRIP-score JavaScript for that survey's real-time
-  quality gate from `response_verification/drip_item_pairs.tsv` — see
-  `docs/qualtrics-part2-wiring.md`.
+  generates the client-side DRIP-score and completeness (`bfi_answered`)
+  JavaScript for that survey's real-time quality gate from
+  `response_verification/drip_item_pairs.tsv` — see
+  `docs/qualtrics-part2-wiring.md`. `wire_qualtrics_flow.py` (same
+  directory) is an experimental, Phase-1-only generator for part of that
+  survey's Survey Flow wiring (the JS question + embedded-data defaults),
+  an alternative to the fully-manual UI build for when the Qualtrics REST
+  API is blocked by organizational policy — see that doc's §5b for what
+  it does and does not cover, and why.
 
 ## File format
 

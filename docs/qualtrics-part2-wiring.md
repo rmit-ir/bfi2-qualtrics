@@ -13,16 +13,28 @@ qsf already includes an instructed-response item... one almost certainly
 needs adding here."
 
 **Why some of this is a manual UI-build step, not committed `.qsf` JSON:**
-Qualtrics publishes no schema for Survey Flow `Branch`/`EmbeddedData`/
-`WebService` elements or per-question custom JavaScript. This repo's
-scored-content JSON (`GradingData`/`SCO`, used for the 60 BFI-2 items, the
-7 RPS items, and the attention-check item's scoring) is safe to
-hand-author because it was reverse-engineered and round-trip-verified
-against real Qualtrics exports (`.claude/skills/qsf-tools/SCHEMA.md`). The
-flow-level pieces below have no such verification, and a malformed flow
-node fails import with an unhelpful generic error — so they're built once,
-by hand, in the Qualtrics UI, which handles producing correct JSON
-regardless of the schema being undocumented to us.
+Qualtrics does publish a schema for `Branch`/`EmbeddedData`/`WebService`
+Survey Flow elements — but only for its REST API
+(`PUT /survey-definitions/{surveyId}/flow`; confirmed live against
+api.qualtrics.com's own reference), not for the `.qsf` export/import
+format. Those are not confirmed to be the same JSON shape (field names
+like the API's `FieldData` on `Branch` may not match what a real `.qsf`
+export actually uses, e.g. community convention points at `BranchLogic`
+instead) — and the REST API itself may be blocked by organizational
+policy anyway (missing per-user API permission, IP allowlisting, or mTLS
+enforcement), which is exactly the situation this doc was written for.
+This repo's scored-content JSON (`GradingData`/`SCO`, used for the 60
+BFI-2 items, the 7 RPS items, and the attention-check item's scoring) is
+safe to hand-author because it was reverse-engineered and
+round-trip-verified against real Qualtrics exports
+(`.claude/skills/qsf-tools/SCHEMA.md`). The flow-level pieces below have
+no such verification, and a malformed flow node fails import with an
+unhelpful generic error — so the higher-risk elements (`Branch`,
+`WebService`) are still built by hand, in the Qualtrics UI, until a real
+donor export lets us confirm their `.qsf` shape (see
+`.claude/skills/bfi2-qsf-splitter/wire_qualtrics_flow.py`'s docstring for
+the experimental generator that already handles the lower-risk pieces —
+the JS question and its embedded-data defaults — programmatically).
 
 ## 1. Overview
 
@@ -241,6 +253,62 @@ rollout that's moot (nothing in this pipeline is live yet, so there's no
 existing traffic to break either way); see `ase2-ai-mode`'s worklog entry
 for this feature for the phased-rollout approach to use if this signal is
 ever added to an already-live deployment instead.
+
+## 5b. Experimental: generating part of this wiring instead of building it by hand
+
+`.claude/skills/bfi2-qsf-splitter/wire_qualtrics_flow.py` is a **prototype,
+Phase 1 of 2**, for when the Qualtrics REST API isn't a usable alternative
+(org policy blocks it) and hand-building the whole flow in the UI is
+error-prone. It reads `output/BFI-2_Full_RPS.qsf` (untouched) and writes
+`output/BFI-2_Full_RPS_Wired.qsf`, generating:
+
+- The §2 step 3 JS question (a Descriptive Text/Graphic question carrying
+  `gen_drip_js.py`'s generated snippet in its `QuestionJS` field) and its
+  own Survey Flow block, positioned after the content block.
+- The §2 step 1 fail-closed `EmbeddedData` defaults.
+
+It deliberately does **not** generate the §2 step 4 `Branch`, the step 5
+copy, or the §5 `WebService` element — Qualtrics' REST API JSON schema for
+those flow-element types is confirmed (via api.qualtrics.com's own
+reference), but that schema is **not confirmed to match the `.qsf`
+export/import format** for the same element types, and getting this wrong
+either fails import outright or silently produces a survey that doesn't
+actually gate anything. Generating those from unverified guesses was
+judged (Sol review, `high` reasoning) too risky to ship without a real
+donor export to check against first.
+
+**Before treating `BFI-2_Full_RPS_Wired.qsf` as more than a draft:** run
+`qsf_lint.py` and `tests/test_qsf_parses.py` (structural JSON validity
+only — neither understands `EmbeddedData` internals), then actually
+**import it into a real Qualtrics account** and confirm:
+- it imports cleanly (no generic import failure — the risk this whole
+  approach is designed against),
+- the JS question renders in Preview and its custom JavaScript actually
+  executes (this phase's `QuestionJS` field needs the account's custom-JS
+  entitlement — don't assume a free/trial account has it; check before
+  relying on the result),
+- the `prolific_pid`/`prolific_study_id`/`prolific_session_id`
+  `EmbeddedData` defaults actually populate from the piped
+  `PROLIFIC_PID`/`STUDY_ID`/`SESSION_ID` fields when the survey is loaded
+  with those as URL query parameters — some Qualtrics configurations need
+  those source fields explicitly declared before piped text can read
+  them, which this generator can't verify from here.
+
+This file is explicitly a prototype, not a deliverable, until all three
+have been checked. (A free/trial account is enough to attempt this
+check — it's just not guaranteed to have every entitlement the check
+needs, which is itself useful information, not just a formality.)
+
+**Phase 2 (not yet started):** once Phase 1 is validated, the next step is
+hand-building one small test survey containing a `Branch`, a `WebService`
+element (POST to a throwaway test endpoint, with a raw JSON body — this
+also answers whether Qualtrics' Web Service element can even send a
+nested-object body like this survey's, or only flat form key/value pairs),
+and a redirect driven by piped embedded data; exporting that `.qsf`; and
+diffing its real JSON against the best-effort field names a review pass
+suggested (`BranchLogic` vs `FieldData`; `URL`/`Method`/`Headers`/`Body`/
+`ResponseMap`) before writing a generator for those elements against
+confirmed field names instead of guessed ones.
 
 ## 6. Error handling and QA checklist
 
