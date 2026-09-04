@@ -1,5 +1,16 @@
 # Careless-responding detection for Qualtrics BFI-2 exports
 
+> **Status: superseded / historical.** This is the original build plan for
+> `verify_responses.py` and predates the later "moderate tier" additions
+> (within-person SD, psychometric synonyms, even-odd consistency,
+> person-total correlation) — the "Checks" section below lists only 4
+> checks; the shipped tool has 8+. It also documents a since-fixed TSV
+> corruption as a still-open problem. For the current, accurate check
+> list and thresholds, see `response_verification/README.md`. Kept here
+> as a historical record of the DRIP-pair verification work (the "Verified
+> facts" section below is still the record of that verification), not as
+> a live spec.
+
 ## Context
 
 The repo ships three self-scoring BFI-2 Qualtrics surveys (`output/*.qsf`). The goal

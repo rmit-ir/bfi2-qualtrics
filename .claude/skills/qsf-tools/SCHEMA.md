@@ -209,7 +209,12 @@ one cell contributes to each scoring category:
 
 ## Import invariants (what breaks an import or the data)
 
-1. Single-line JSON; Qualtrics is strict about the overall schema.
+1. **Valid** JSON — Qualtrics is strict about the overall schema, but
+   accepts pretty-printed files too; single-line is this repo's own
+   writing convention (`json.dump(..., separators=(",", ":"))`), not a
+   Qualtrics requirement. What actually breaks an import is malformed
+   JSON, most easily a non-JSON-aware tool un-escaping the quotes inside
+   embedded HTML `QuestionText`.
 2. `SurveyID` identical on every element.
 3. All `FL` flow IDs resolve to `BL` block IDs; all `BlockElements`
    QuestionIDs resolve to `SQ` elements.

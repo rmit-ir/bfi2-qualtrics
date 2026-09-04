@@ -35,14 +35,25 @@ python3 .claude/skills/bfi2-qsf-splitter/split_bfi2.py <input.qsf>
 
 `<input.qsf>` is a unified BFI-2 survey containing the Full (QID2), Short
 (QID3), and Extra-Short (QID4) forms as separate blocks — supply the path; it
-is not bundled in this repo. Writes `BFI-2_Full.qsf`, `BFI-2_Short.qsf`,
-`BFI-2_ExtraShort.qsf` to the current directory. Expected output:
+is not bundled in this repo. Get it from the
+[Colby Personality Lab](https://www.colby.edu/academics/departments-and-programs/psychology/research-opportunities/personality-lab/the-bfi-2/)
+— download manually in a browser (the site 403s automated clients).
+Writes `BFI-2_Full.qsf`, `BFI-2_Short.qsf`,
+`BFI-2_ExtraShort.qsf` to `output/` (repo root, regardless of the current
+working directory — run it from anywhere). Expected output:
 
 ```
-Wrote BFI-2_Full.qsf (QID2): 60 items scored, 5 domain + 15 facet categories
-Wrote BFI-2_Short.qsf (QID3): 30 items scored, 5 domain + 15 facet categories
-Wrote BFI-2_ExtraShort.qsf (QID4): 15 items scored, 5 domain + no facet categories
+Built BFI-2_Full.qsf (QID2): 60 items scored, 5 domain + 15 facet categories
+Built BFI-2_Short.qsf (QID3): 30 items scored, 5 domain + 15 facet categories
+Built BFI-2_ExtraShort.qsf (QID4): 15 items scored, 5 domain + no facet categories
+Wrote BFI-2_Full.qsf
+Wrote BFI-2_Short.qsf
+Wrote BFI-2_ExtraShort.qsf
 ```
+
+("Built" confirms each form scored correctly in memory; "Wrote" only
+prints once that form's file is actually on disk — the two are separate
+lines because nothing is written until every form has built successfully.)
 
 The script asserts internal invariants (per-domain/facet item counts, one/two
 `Grades` keys per item, every referenced category defined in `SCO`) and exits
@@ -100,3 +111,12 @@ category keeps a stable ID across runs. See
   detector (`response_verification/verify_responses.py`) also reads this map and
   cross-validates `drip_item_pairs.tsv` against it at load time — editing a
   facet/domain/reverse entry here can make that check abort. Keep them in sync.
+- `add_rps.py` — adds the 7-item Risk Propensity Scale (Meertens & Lion, 2008)
+  plus one attention-check item to `../../../output/BFI-2_Full.qsf`, writing
+  `../../../output/BFI-2_Full_RPS.qsf`. Run after `split_bfi2.py` (needs its
+  output as input); doesn't touch the pure `BFI-2_Full.qsf`. Run
+  `python3 add_rps.py` with no arguments.
+- `gen_drip_js.py` — generates the client-side DRIP-score JavaScript snippet
+  (for `BFI-2_Full_RPS.qsf`'s real-time quality gate) from
+  `../../../response_verification/drip_item_pairs.tsv`. See
+  `../../../docs/qualtrics-part2-wiring.md`.

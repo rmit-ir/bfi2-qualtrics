@@ -1,3 +1,9 @@
-pandas
-numpy
-scipy
+# Bounded to the current major version of each package (no version-matrix
+# CI here, just whatever's installed locally when tests/ last ran clean) --
+# an untested major-version bump in pandas/numpy/scipy can silently change
+# parsing, covariance, or correlation behavior in a research pipeline.
+# Bump the upper bound deliberately (and re-run the test suite) rather than
+# letting it drift.
+pandas>=3.0,<4
+numpy>=2.4,<3
+scipy>=1.18,<2

@@ -105,6 +105,35 @@ class TestDripPairTable(unittest.TestCase):
                 self.assertEqual(bool(meta["reverse"]), tsv_rev,
                                  f"pair {row['Pair']}: item {item} reverse mismatch")
 
+    def test_no_item_appears_in_more_than_one_pair(self):
+        seen = set()
+        for row in self.rows:
+            for side in ("1", "2"):
+                item = int(row[f"Item{side}"])
+                self.assertNotIn(item, seen,
+                                 f"item {item} appears in more than one DRIP pair")
+                seen.add(item)
+
+    def test_matches_paper_verified_pairs(self):
+        # Ruchensky, Edens, & Donnellan (2025) Table 1, by BFI-2 item number
+        # -- independently transcribed and verified against the paper (see
+        # plans/careless-responding-detection.md's "Verified facts" section,
+        # which records this same list as a checked fact, not just a
+        # comment). This is the closest thing to an independent oracle this
+        # repo has for the pair *set* itself (item numbers), as opposed to
+        # the facet/domain/reverse consistency checked above, which is only
+        # self-consistency against master_mapping.json.
+        expected_pairs = {
+            frozenset((54, 39)), frozenset((35, 20)), frozenset((31, 16)),
+            frozenset((46, 1)), frozenset((56, 41)), frozenset((33, 3)),
+            frozenset((49, 34)), frozenset((51, 21)), frozenset((44, 29)),
+            frozenset((43, 13)), frozenset((53, 38)), frozenset((52, 7)),
+            frozenset((58, 28)), frozenset((59, 14)), frozenset((60, 15)),
+        }
+        actual_pairs = {frozenset((int(row["Item1"]), int(row["Item2"])))
+                        for row in self.rows}
+        self.assertEqual(actual_pairs, expected_pairs)
+
 
 def write_synthetic_export(path, respondents, sep=",", encoding="utf-8",
                            mode="label"):
@@ -318,6 +347,139 @@ class TestVerifyResponses(unittest.TestCase):
         values = pd.DataFrame([["5", "3", "2", "4", "1"]], columns=item_cols)
         self.assertEqual(self.mod.infer_export_mode(labels, item_cols), "label")
         self.assertEqual(self.mod.infer_export_mode(values, item_cols), "value")
+
+
+@unittest.skipUnless(HAVE_DEPS, "pandas/numpy/scipy not installed")
+class TestSafetyFeatures(unittest.TestCase):
+    """Direct coverage for the newer defensive checks -- threshold range
+    validation, malformed-header rejection, formula-injection
+    neutralization, output delimiter selection, and exact item-count
+    enforcement -- none of which the flag-correctness tests above exercise."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.mod = load_verify_module()
+
+    def _one_respondent(self):
+        return [{"scores": {i: 3 for i in range(1, N_ITEMS + 1)}, "Duration": 300}]
+
+    def _write(self, d, respondents=None, **kwargs):
+        src = Path(d) / "export.csv"
+        write_synthetic_export(src, respondents or self._one_respondent(), **kwargs)
+        return src
+
+    def test_invalid_threshold_rejected(self):
+        with tempfile.TemporaryDirectory() as d:
+            src = self._write(d)
+            with self.assertRaises(SystemExit):
+                self.mod.main([str(src), "--mahal-alpha", "0"])
+            with self.assertRaises(SystemExit):
+                self.mod.main([str(src), "--sd-cutoff", "-1"])
+            with self.assertRaises(SystemExit):
+                self.mod.main([str(src), "--syn-pair-r", "2"])
+
+    def test_reprocessing_own_output_rejected(self):
+        # Feeding this script's own previously-flagged output back in as
+        # input must be rejected outright, not silently sanitize its own
+        # computed metric columns (a negative correlation) as if they were
+        # respondent data.
+        with tempfile.TemporaryDirectory() as d:
+            src = self._write(d)
+            rows = list(csv.reader(open(src, newline="", encoding="utf-8")))
+            rows[0].append("psychsyn_r")  # a reserved output column name
+            for i, row in enumerate(rows[3:], start=3):
+                row.append("-0.5")
+            with open(src, "w", newline="", encoding="utf-8") as f:
+                csv.writer(f).writerows(rows)
+            with self.assertRaises(SystemExit):
+                self.mod.main([str(src)])
+
+    def test_duplicate_item_number_columns_rejected(self):
+        # "BFI-2_1" and "BFI-2_01" both parse to item 1 -- set(numbers)
+        # alone would miss this (still covers 1..60), silently dropping
+        # one column's data downstream. Must be rejected explicitly.
+        with tempfile.TemporaryDirectory() as d:
+            src = Path(d) / "export.csv"
+            write_synthetic_export(src, self._one_respondent())
+            rows = list(csv.reader(open(src, newline="", encoding="utf-8")))
+            item1_idx = rows[0].index("BFI-2_1")
+            for row in rows:
+                row.insert(item1_idx + 1, row[item1_idx])  # duplicate column
+            rows[0][item1_idx + 1] = "BFI-2_01"
+            with open(src, "w", newline="", encoding="utf-8") as f:
+                csv.writer(f).writerows(rows)
+            with self.assertRaises(SystemExit):
+                self.mod.main([str(src)])
+
+    def test_malformed_header_rejected(self):
+        with tempfile.TemporaryDirectory() as d:
+            src = Path(d) / "bad.csv"
+            # Only 2 header rows, not Qualtrics' real 3 (column names /
+            # question text / ImportId JSON).
+            with open(src, "w", newline="", encoding="utf-8") as f:
+                w = csv.writer(f)
+                w.writerow(["StartDate"] + ITEM_COLS)
+                w.writerow(["Start Date"] + [f"Item {i}" for i in range(1, N_ITEMS + 1)])
+                w.writerow(["2026-01-01"] + ["Agree strongly"] * N_ITEMS)
+            with self.assertRaises(SystemExit):
+                self.mod.main([str(src)])
+
+    def test_truncated_item_set_rejected(self):
+        with tempfile.TemporaryDirectory() as d:
+            src = Path(d) / "export.csv"
+            write_synthetic_export(src, self._one_respondent())
+            # Drop the last 5 item columns -> 55 of 60, no longer the full
+            # published form.
+            import pandas as pd
+            df = pd.read_csv(src, dtype=str)
+            df = df.drop(columns=[f"BFI-2_{i}" for i in range(56, 61)])
+            df.to_csv(src, index=False)
+            with self.assertRaises(SystemExit):
+                self.mod.main([str(src)])
+
+    def test_output_delimiter_matches_requested_extension(self):
+        with tempfile.TemporaryDirectory() as d:
+            src = self._write(d)
+            out = Path(d) / "flagged.tsv"
+            rc = self.mod.main([str(src), "-o", str(out)])
+            self.assertEqual(rc, 0)
+            first_line = out.read_text(encoding="utf-8").splitlines()[0]
+            self.assertIn("\t", first_line)
+            self.assertNotIn(",", first_line.split("\t")[0])
+
+    def test_formula_injection_neutralized_in_output(self):
+        with tempfile.TemporaryDirectory() as d:
+            src = self._write(d)
+            # Poison an original-export column (not one this script
+            # computes) with a spreadsheet formula -- editing the raw CSV
+            # rows directly, not via a naive pandas re-read/write, which
+            # would misinterpret the file's 3-row Qualtrics header as data.
+            rows = list(csv.reader(open(src, newline="", encoding="utf-8")))
+            start_date_col = rows[0].index("StartDate")
+            rows[3][start_date_col] = "=cmd|'/c calc'!A1"  # row 3 = first respondent
+            with open(src, "w", newline="", encoding="utf-8") as f:
+                csv.writer(f).writerows(rows)
+            out = Path(d) / "flagged.csv"
+            rc = self.mod.main([str(src), "-o", str(out)])
+            self.assertEqual(rc, 0)
+            import pandas as pd
+            out_df = pd.read_csv(out, skiprows=[1, 2], dtype=str)
+            self.assertTrue(out_df.iloc[0]["StartDate"].startswith("'="))
+
+    def test_formula_injection_neutralized_in_header(self):
+        # The header row is itself a CSV cell -- a poisoned column name
+        # (DataExportTag) must be neutralized too, not just data cells.
+        with tempfile.TemporaryDirectory() as d:
+            src = self._write(d)
+            rows = list(csv.reader(open(src, newline="", encoding="utf-8")))
+            rows[0][rows[0].index("StartDate")] = "=cmd|'/c calc'!A1"
+            with open(src, "w", newline="", encoding="utf-8") as f:
+                csv.writer(f).writerows(rows)
+            out = Path(d) / "flagged.csv"
+            rc = self.mod.main([str(src), "-o", str(out)])
+            self.assertEqual(rc, 0)
+            header = out.read_text(encoding="utf-8").splitlines()[0]
+            self.assertIn("'=cmd", header)
 
 
 @unittest.skipUnless(HAVE_DEPS, "pandas/numpy/scipy not installed")
