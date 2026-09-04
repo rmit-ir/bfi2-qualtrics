@@ -13,3 +13,8 @@ response_verification/*.pdf
 
 # Claude Code machine-local settings
 .claude/settings.local.json
+
+# Local credentials (e.g. scripts/llm_harness.py's Azure OpenAI creds) --
+# never commit
+.env
+scripts/.llm_sessions/
