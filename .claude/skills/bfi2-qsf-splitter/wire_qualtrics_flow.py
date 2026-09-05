@@ -123,8 +123,8 @@ def assert_invariants(qsf):
         raise AssertionError("FL root has no FlowID")
     flow = fl["Payload"]["Flow"]
     flow_node_ids = [n.get("FlowID") for n in flow]
-    if any(fid is None for fid in flow_node_ids):
-        raise AssertionError(f"flow node missing FlowID: {flow}")
+    if any(not fid for fid in flow_node_ids):
+        raise AssertionError(f"flow node missing or empty FlowID: {flow}")
     flow_ids = flow_node_ids + [fl["Payload"]["FlowID"]]
     if len(flow_ids) != len(set(flow_ids)):
         raise AssertionError(f"duplicate FlowID in {flow_ids}")
@@ -175,11 +175,16 @@ def apply_wiring(qsf, js_snippet):
     """
     elements = qsf["SurveyElements"]
 
-    existing_qids = {e.get("PrimaryAttribute") for e in elements if e.get("Element") == "SQ"}
+    sq_elements = [e for e in elements if e.get("Element") == "SQ"]
+    existing_qids = {e.get("PrimaryAttribute") for e in sq_elements}
     if QID_JS in existing_qids:
         raise SystemExit(
             f"input already contains {QID_JS} -- expected the plain "
             "BFI-2 Full + RPS form as input, not an already-wired one.")
+    existing_export_tags = {e["Payload"].get("DataExportTag") for e in sq_elements}
+    new_export_tag = build_js_question("")["DataExportTag"]
+    if new_export_tag in existing_export_tags:
+        raise SystemExit(f"input already contains DataExportTag {new_export_tag!r}")
 
     bl = find_element(elements, lambda e: e["Element"] == "BL")
     if JS_BLOCK_ID in {b["ID"] for b in bl["Payload"]}:
@@ -187,6 +192,10 @@ def apply_wiring(qsf, js_snippet):
 
     fl = find_element(elements, lambda e: e["Element"] == "FL")
     flow = fl["Payload"]["Flow"]
+    existing_flow_ids = {n.get("FlowID") for n in flow} | {fl["Payload"].get("FlowID")}
+    for new_flow_id in (EMBEDDED_DATA_FLOW_ID, JS_BLOCK_FLOW_ID):
+        if new_flow_id in existing_flow_ids:
+            raise SystemExit(f"input already contains FlowID {new_flow_id}")
     # Derived from the FLOW's own pre-existing Block-type node, not
     # bl["Payload"][0] -- keeps the block list and the flow order coupled
     # through the flow itself rather than an assumed list-order match.
