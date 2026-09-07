@@ -142,7 +142,7 @@ def render(pairs):
     lines.append("    // (the '__js_' prefix is required by setJSEmbeddedData; a later plain")
     lines.append("    // Embedded Data element copies it to 'drip_score' via piped text -- see")
     lines.append("    // docs/qualtrics-part2-wiring.md).")
-    lines.append("    Qualtrics.SurveyEngine.setJSEmbeddedData(\"drip_score\", drip);")
+    lines.append("    Qualtrics.SurveyEngine.setJSEmbeddedData(\"__js_drip_score\", drip);")
     lines.append("")
     lines.append("    // BFI-2 completeness count -- how many of the 60 items got a real")
     lines.append("    // 1-5 answer. Exact regex match, not parseInt: parseInt(\"1x\", 10) is 1,")
@@ -159,7 +159,7 @@ def render(pairs):
     lines.append("    // Embedded data field must be declared in Survey Flow as")
     lines.append("    // '__js_bfi_answered' -- same '__js_' prefix / copy-step pattern as")
     lines.append("    // drip_score above.")
-    lines.append("    Qualtrics.SurveyEngine.setJSEmbeddedData(\"bfi_answered\", bfiAnswered);")
+    lines.append("    Qualtrics.SurveyEngine.setJSEmbeddedData(\"__js_bfi_answered\", bfiAnswered);")
     lines.append("});")
     return "\n".join(lines)
 

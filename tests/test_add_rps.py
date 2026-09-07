@@ -128,7 +128,13 @@ class TestGenDripJs(unittest.TestCase):
         self.assertIn("/^[1-5]$/.test(bfiRaw[i])", self.js)
 
     def test_bfi_answered_sets_embedded_data(self):
-        self.assertIn('setJSEmbeddedData("bfi_answered", bfiAnswered)', self.js)
+        # Must carry the '__js_' prefix setJSEmbeddedData requires -- the
+        # plain 'bfi_answered' name is only set later by a separate
+        # Embedded Data copy step (see docs/qualtrics-part2-wiring.md S2).
+        self.assertIn('setJSEmbeddedData("__js_bfi_answered", bfiAnswered)', self.js)
+
+    def test_drip_score_sets_embedded_data(self):
+        self.assertIn('setJSEmbeddedData("__js_drip_score", drip)', self.js)
 
 
 class TestGeneratedQsf(unittest.TestCase):
