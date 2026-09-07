@@ -118,7 +118,10 @@ def render(pairs):
     lines.append("// .claude/skills/bfi2-qsf-splitter/gen_drip_js.py from drip_item_pairs.tsv.")
     lines.append("// Paste into the last question's 'Add JavaScript' panel (Advanced Options)")
     lines.append("// in the Survey-Flow block that runs AFTER the BFI-2+RPS content block.")
-    lines.append("Qualtrics.SurveyEngine.addOnload(function () {")
+    # addOnReady over addOnload -- community-reported addOnload unreliability
+    # for descriptive-text questions with minimal content (see
+    # docs/qualtrics-part2-wiring.md S2 step 3).
+    lines.append("Qualtrics.SurveyEngine.addOnReady(function () {")
     lines.append("    var drip = 0;")
     for i, p in enumerate(pairs, start=1):
         v1 = f"v{i}a"

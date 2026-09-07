@@ -20,7 +20,12 @@ import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-QSF_FILES = sorted(REPO_ROOT.rglob("*.qsf"))
+# qualtrics_test_exports/ holds real Qualtrics round-trip test files (donor
+# exports for wire_qualtrics_flow.py, hand-modified in the Qualtrics UI) --
+# scratch material, not a repo deliverable, not held to this repo's own
+# generators' structural invariants.
+QSF_FILES = sorted(p for p in REPO_ROOT.rglob("*.qsf")
+                    if "qualtrics_test_exports" not in p.parts)
 
 sys.path.insert(0, str(REPO_ROOT / ".claude" / "skills" / "qsf-tools"))
 import qsf_lint  # noqa: E402

@@ -8,6 +8,12 @@ __pycache__/
 # Qualtrics response-data exports (not part of the deliverable)
 *_[0-9][0-9].[0-9][0-9].zip
 
+# Real Qualtrics round-trip test exports (.qsf and response data) -- scratch
+# material for validating wire_qualtrics_flow.py against a real donor
+# export, not a repo deliverable. Can contain real response data (location,
+# timestamps) from live test submissions.
+qualtrics_test_exports/
+
 # Source paper PDF (cited in README; kept out of the repo)
 response_verification/*.pdf
 

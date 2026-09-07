@@ -84,7 +84,12 @@ def build_js_question(js_snippet):
         "QuestionType": "DB",
         "Selector": "TB",
         "QuestionID": QID_JS,
-        "QuestionText": "",
+        # Truly empty QuestionText can leave Qualtrics never firing this
+        # question's JS at all (reported behavior, not just theoretical --
+        # confirmed via a real test survey where the page never rendered
+        # and addOnload never ran). "&nbsp;" keeps the page visually blank
+        # while giving Qualtrics real content to render.
+        "QuestionText": "&nbsp;",
         "QuestionDescription": "Quality-gate signal computation (drip_score, bfi_answered)",
         "DataExportTag": "QID102",
         "Configuration": {"QuestionDescriptionOption": "UseText"},

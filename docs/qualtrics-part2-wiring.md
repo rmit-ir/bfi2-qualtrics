@@ -97,17 +97,23 @@ end-of-survey.
    Text/Graphic question is fine) carrying the generated snippet (§4
    below), on its own page directly after the content block. The snippet
    computes both `drip_score` and `bfi_answered` in the same
-   `addOnload` handler. It must be a
+   `addOnReady` handler. It must be a
    question the participant's browser actually renders — Qualtrics only
-   fires a question's `addOnload` JS when that question is displayed, so
+   fires a question's JS when that question is displayed, so
    this can't be skipped via display logic or folded into a page the
-   participant never sees. Putting it on its own single-question page
-   (rather than sharing a page with anything else) is what guarantees the
-   JS *runs* — before the participant can advance to the next Survey-Flow
-   element — when the page renders normally. It's still not a guarantee the
-   JS *completes successfully*: a script error, a blocked script, or some
-   future Qualtrics API change could all still leave `__js_drip_score` and
-   `__js_bfi_answered`
+   participant never sees. **Give the question non-empty `QuestionText`**
+   (`&nbsp;` is enough) — confirmed via a real test survey that a
+   Descriptive Text question with truly empty text can render nothing at
+   all, silently skipping the page and never firing its JS (`wire_
+   qualtrics_flow.py` does this). Prefer `addOnReady` over `addOnload` for
+   this same reason — community-reported `addOnload` unreliability for
+   minimal-content descriptive questions. Putting it on its own
+   single-question page (rather than sharing a page with anything else) is
+   what guarantees the JS *runs* — before the participant can advance to
+   the next Survey-Flow element — when the page renders normally. It's
+   still not a guarantee the JS *completes successfully*: a script error, a
+   blocked script, or some future Qualtrics API change could all still
+   leave `__js_drip_score` and `__js_bfi_answered`
    unset. Step 1's `-1` defaults are what actually make
    that failure mode safe (a valid review verdict, not malformed request
    JSON) — this page is about sequencing, not a substitute for those defaults.
@@ -160,7 +166,7 @@ python3 .claude/skills/bfi2-qsf-splitter/gen_drip_js.py
 
 It reads `response_verification/drip_item_pairs.tsv` (the same 15-pair
 table `verify_responses.py`'s offline `check_drip()` uses) and emits a
-ready-to-paste `Qualtrics.SurveyEngine.addOnload(...)` snippet using the
+ready-to-paste `Qualtrics.SurveyEngine.addOnReady(...)` snippet using the
 *current* documented API — `setEmbeddedData()` is deprecated;
 `setJSEmbeddedData()` is its replacement and requires the target embedded
 data field to be pre-declared in Survey Flow with a `__js_` prefix (see
