@@ -35,7 +35,13 @@ this gate without first confirming Question JavaScript actually executes
 in the target account** (a definitive, cheap test: a visible DOM mutation
 like `document.body.style.backgroundColor = "red"` in `addOnReady`,
 checked in a real Preview/Test Survey run, not just the "Add JavaScript"
-panel accepting the code).
+panel accepting the code). "Switch Survey Taking Experience" is not a
+fix worth retrying blind: Classic and New Survey Taking Experience were
+both tested (the survey was switched to New mid-session — confirmed by a
+completely different response-page DOM structure — and the JS still
+never ran under either), and Qualtrics's own docs state custom JavaScript
+is supported under the New experience. Whatever's blocking it is
+account/brand-level, not a per-survey display setting.
 
 The current design instead sends every input the two signals need — all
 60 raw BFI-2 item answers, plus the attention-check score — directly in
@@ -336,3 +342,14 @@ as more than a generated draft:
       actually populate from `PROLIFIC_PID`/`STUDY_ID`/`SESSION_ID` URL
       query parameters when the survey is loaded that way — not assumed
       from the Embedded Data defaults alone.
+- [ ] Confirm every `ResponseMap` entry's destination field is actually
+      populated (not blank) in a completed-response export — the
+      key/value orientation bug (§3) silently produced blank fields with
+      correctly-named columns, which looked superficially fine until the
+      cell contents were actually checked.
+- [ ] Confirm `Q_RecaptchaScore`/`Q_RecaptchaStatus`/`Q_RecaptchaError`/
+      `Q_BallotBoxStuffing`/`Q_PrivateBrowserDetected` all appear as
+      columns in a completed-response export (this needs
+      `IncludeSecurityFields` — `Q_RecaptchaScore` alone works as piped
+      text without it, but the others, and `Q_RecaptchaScore` showing up
+      *in the export*, do not).
