@@ -441,6 +441,15 @@ def main():
           f"see the module docstring."
           + (" [transport-validation build, targets httpbin.org]"
              if transport_validation else ""))
+    print("\nManual step after import: enable Bot Detection yourself "
+          "(Survey Options > Security > Bot Detection, then check "
+          "'Include Security Fields in Responses') -- confirmed this "
+          "session that setting RecaptchaV3/IncludeSecurityFields in the "
+          ".qsf itself breaks import, so it can't be generated. If you "
+          "skip this step, recaptcha_score arrives blank on every "
+          "response and ase2-ai-mode must not force review purely "
+          "because of that -- see docs/qualtrics-part2-wiring.md S6.",
+          file=sys.stderr)
 
 
 if __name__ == "__main__":

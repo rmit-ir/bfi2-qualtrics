@@ -162,10 +162,14 @@ time measurement — deferred; don't send a fake `0`), any nested object
 (`extra_signals` or similar — the body is deliberately flat, simpler to
 generate/inspect/debug than nesting).
 
-`Q_RecaptchaScore` caveat: Qualtrics's own fail-open default if reCAPTCHA
-never loads is `1` — that is **not** proof of a verified human, just
-Qualtrics's own can't-tell value. Treat a blank/malformed score as review,
-but don't treat `1` as provably-human either.
+`Q_RecaptchaScore` caveat: Bot Detection is a manual, easy-to-forget
+post-import UI step (see §2's "Generated vs. still-manual") — a survey
+that never had it enabled sends `recaptcha_score = ""` on every response,
+always. Treat blank as "no signal," not "failed check" (see §6's verdict
+logic) — don't force review purely because it's blank. Qualtrics's own
+fail-open default if reCAPTCHA fails to *load* on an *enabled* survey is
+`1` — that is **not** proof of a verified human either, just Qualtrics's
+own can't-tell value.
 
 ### Response and `ResponseMap`
 
@@ -275,11 +279,24 @@ not built in this session (that repo isn't open here). Precise spec:
   malformed response value (not a request-level problem) — treat as
   fail-closed `review`, not a 422.
 - Require `attention_check_score` (string `"1"`/`"0"`; blank/unexpected ->
-  review), `recaptcha_score` (string; blank/malformed -> review; note a
-  value of `"1"` is Qualtrics's fail-open default, not proof of a human —
-  the actual pass threshold is `ase2-ai-mode`'s own policy decision, not
-  specified here), `drip_spec_sha256` (compare against the vendored
+  review), `recaptcha_score` (string, **optional signal, not a required
+  one** — see below), `drip_spec_sha256` (compare against the vendored
   table's own hash; mismatch -> review with reason `drip_spec_mismatch`).
+- `recaptcha_score` handling: Bot Detection is a **manual, easy-to-forget
+  post-import UI step** (`wire_qualtrics_flow.py` can't generate it —
+  confirmed live that injecting `RecaptchaV3`/`IncludeSecurityFields`
+  into the `.qsf` breaks import outright, bisected one field at a time,
+  both individually fail). If it was never enabled on a given survey,
+  `${e://Field/Q_RecaptchaScore}` resolves blank on *every* response,
+  always — not intermittently. Treat blank as **"no signal available,"
+  not "failed check"**: don't force `review` on a blank score alone, or
+  every response from a deployment that skipped this step gets flagged
+  forever, silently, with no obvious cause. A present, parseable score
+  is a real signal (a low value should still force review; note `"1"` is
+  Qualtrics's own fail-open default when reCAPTCHA fails to *load* on an
+  *enabled* survey, not proof of a verified human). A present but
+  unparseable/malformed non-blank value is a genuine anomaly worth
+  treating as review, unlike a clean blank.
 - Missing keys, wrong JSON types, or an unsupported `contract_version` are
   structural failures -> 4xx (unlike a quality failure, which is always a
   normal tracked `review`, never an error response).
@@ -304,10 +321,12 @@ checks, not one combined pass/fail.
 
 **Verdict**: `pass` requires `bfi_answered == 60` AND `drip_score`
 computable AND `0 <= drip_score < drip_cutoff` AND
-`attention_check_score == "1"` AND reCAPTCHA policy satisfied AND no
-`drip_spec_sha256` mismatch. Any failure of these is a normal tracked
-`review`, never a 422 — reserve 4xx strictly for the structural failures
-above.
+`attention_check_score == "1"` AND no `drip_spec_sha256` mismatch AND
+(`recaptcha_score` is blank, **or** it's present and satisfies the
+configured reCAPTCHA policy — blank never blocks `pass` on its own, only
+a present-and-failing score does). Any failure of these is a normal
+tracked `review`, never a 422 — reserve 4xx strictly for the structural
+failures above.
 
 **Privacy/governance**: this is the one substantive behavior change worth
 flagging loudly. The old design sent only two derived numbers
