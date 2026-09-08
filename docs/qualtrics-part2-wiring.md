@@ -178,6 +178,19 @@ fail-open default if reCAPTCHA fails to *load* on an *enabled* survey is
 `1` — that is **not** proof of a verified human either, just Qualtrics's
 own can't-tell value.
 
+A present score is also weaker evidence than it looks: live-tested this
+session with browser-automation-driven completions (scripted clicks, no
+real mouse movement) from two different environments — a fresh/
+sandboxed automation browser scored `0.1`-`0.2` (correctly flagged as
+bot-like), but the *identical* scripted automation run through a real,
+already-logged-in Chrome profile (real cookies/history/extensions/
+fingerprint) scored `1` every time, four separate completions. reCAPTCHA
+v3 appears to weight browser/session trust signals far more heavily than
+the actual interaction pattern — it's a real signal against naive/
+headless automation, but not evidence against automation running through
+a trusted, real browser profile. Don't treat a high `recaptcha_score` as
+strong proof of a human respondent on its own.
+
 ### Response and `ResponseMap`
 
 `ase2-ai-mode` should return:
