@@ -225,6 +225,45 @@ class TestApplyWiring(unittest.TestCase):
         ws = self._web_service(qsf)
         self.assertEqual(ws["ResponseMap"], wf.build_response_map())
 
+    def test_response_map_orientation_key_is_source_path_value_is_destination(self):
+        # Confirmed live: the opposite orientation silently produces
+        # blank fields -- the export column is named after "value", but
+        # its content stays empty unless "key" is a real JSON path.
+        rm = wf.build_response_map()
+        by_value = {p["value"]: p["key"] for p in rm}
+        self.assertEqual(by_value["drip_score"], "quality_signals.drip_score")
+        self.assertEqual(by_value["verdict"], "verdict")
+
+    def test_survey_options_enables_bot_detection(self):
+        qsf = self._wired()
+        so = wf.find_element(qsf["SurveyElements"], lambda e: e["Element"] == "SO")
+        for key, expected in wf.build_security_options_patch().items():
+            self.assertEqual(so["Payload"][key], expected, key)
+
+    def test_ballot_box_detail_fields_left_untouched(self):
+        # Only the boolean is flipped -- Behavior/Message/MessageLibrary/
+        # URL keep whatever the source qsf already had (confirmed None in
+        # every donor export seen, even with the boolean off); their
+        # populated shape when the feature is actually configured is
+        # unconfirmed, so this script doesn't guess at it.
+        before_so = wf.find_element(
+            self.input_qsf["SurveyElements"], lambda e: e["Element"] == "SO")
+        before_details = {
+            k: before_so["Payload"].get(k)
+            for k in ("BallotBoxStuffingPreventionBehavior", "BallotBoxStuffingPreventionMessage",
+                     "BallotBoxStuffingPreventionMessageLibrary", "BallotBoxStuffingPreventionURL")
+        }
+        qsf = self._wired()
+        after_so = wf.find_element(qsf["SurveyElements"], lambda e: e["Element"] == "SO")
+        for k, before_v in before_details.items():
+            self.assertEqual(after_so["Payload"].get(k), before_v, k)
+
+    def test_rejects_missing_so_element(self):
+        qsf = copy.deepcopy(self.input_qsf)
+        qsf["SurveyElements"] = [e for e in qsf["SurveyElements"] if e["Element"] != "SO"]
+        with self.assertRaises(SystemExit):
+            wf.apply_wiring(qsf)
+
     def test_drip_spec_hash_present_and_matches_current_tsv(self):
         import drip_spec
         qsf = self._wired()

@@ -84,10 +84,25 @@ Flow than the original design, not a bigger one.
 
 ### Generated vs. still-manual
 
-`wire_qualtrics_flow.py` generates the initial `EmbeddedData` defaults and
+`wire_qualtrics_flow.py` generates the initial `EmbeddedData` defaults,
 the full `WebService` element (all 68 body fields, `ResponseMap`,
-placeholder URL). It does **not** generate, and these remain manual UI
-steps after import:
+placeholder URL), and enables Qualtrics's built-in Bot Detection on the
+survey's `SO` (Survey Options) element — `RecaptchaV3`,
+`IncludeSecurityFields`, and `BallotBoxStuffingPrevention`, all confirmed
+real `.qsf` keys from two independent donor exports with these turned on
+via the UI (Survey Options > Security). `IncludeSecurityFields` is what
+makes `Q_RecaptchaScore`/`Q_RecaptchaStatus`/`Q_RecaptchaError`/
+`Q_BallotBoxStuffing`/`Q_PrivateBrowserDetected` appear in response
+exports at all — without it, `Q_RecaptchaScore` still works as piped text
+mid-survey (confirmed earlier), but none of these show up in exports.
+`BallotBoxStuffingPrevention`'s own detail fields (`Behavior`/`Message`/
+`MessageLibrary`/`URL`) are left untouched — every donor export seen has
+them as `None` even with the boolean on, and their populated shape when
+that feature is actually configured (a custom message, a redirect URL)
+is unconfirmed, so this only flips the boolean rather than guessing at
+those.
+
+It does **not** generate, and these remain manual UI steps after import:
 
 - The verdict `Branch` (routing on `${e://Field/verdict}`) and the
   redirect/`EndSurvey` nodes — needs a real donor `.qsf` export containing
