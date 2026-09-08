@@ -100,7 +100,9 @@ with the expected top-level shape. Run it after editing any `.qsf`.
   Parameters; `drip_score`/`bfi_answered` are computed server-side in
   `ase2-ai-mode`, not client-side JS — an earlier JS-based design was
   abandoned after live testing established Question JavaScript never
-  executes in the target Qualtrics account) — see
+  executes in the target Qualtrics account), and switches the survey to
+  Qualtrics's "New Survey Taking Experience" skin (confirmed safe to
+  inject on import, unlike Bot Detection) — see
   `docs/qualtrics-part2-wiring.md` for the full request contract, what's
   generated vs. still manual (the verdict `Branch`/redirect nodes, a
   custom auth header, and Bot Detection — tried generating the latter,

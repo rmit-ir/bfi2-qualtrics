@@ -234,18 +234,35 @@ class TestApplyWiring(unittest.TestCase):
         self.assertEqual(by_value["drip_score"], "quality_signals.drip_score")
         self.assertEqual(by_value["verdict"], "verdict")
 
-    def test_survey_options_left_completely_untouched(self):
-        # Enabling Bot Detection (RecaptchaV3/IncludeSecurityFields) via a
-        # plain JSON patch on SO was tried and reverted -- it broke a
-        # fresh Qualtrics import even though those exact values were
-        # present in donor exports of surveys enabled through the UI.
-        # This script must not touch SO at all until a real donor export
-        # of a *freshly-imported-and-working* file confirms what's safe.
+    def test_new_skin_applied(self):
+        # Confirmed SAFE to inject on import via live bisection (unlike
+        # RecaptchaV3/IncludeSecurityFields, which both independently
+        # break import -- see test_bot_detection_fields_left_untouched).
+        qsf = self._wired()
+        so = wf.find_element(qsf["SurveyElements"], lambda e: e["Element"] == "SO")
+        for key, expected in wf.NEW_SKIN_PATCH.items():
+            self.assertEqual(so["Payload"][key], expected, key)
+
+    def test_bot_detection_fields_left_untouched(self):
+        # RecaptchaV3/IncludeSecurityFields via a plain JSON patch on SO
+        # was tried and reverted -- confirmed live (bisected one field at
+        # a time) that each independently breaks a fresh Qualtrics
+        # import, even though those exact values were present in donor
+        # exports of surveys enabled through the UI. Don't regenerate
+        # these without a real donor export of a *freshly-imported-and-
+        # working* file confirming what's actually safe.
         before_so = wf.find_element(
             self.input_qsf["SurveyElements"], lambda e: e["Element"] == "SO")
         qsf = self._wired()
         after_so = wf.find_element(qsf["SurveyElements"], lambda e: e["Element"] == "SO")
-        self.assertEqual(after_so, before_so)
+        for key in ("RecaptchaV3", "IncludeSecurityFields"):
+            self.assertEqual(after_so["Payload"].get(key), before_so["Payload"].get(key), key)
+
+    def test_rejects_missing_so_element(self):
+        qsf = copy.deepcopy(self.input_qsf)
+        qsf["SurveyElements"] = [e for e in qsf["SurveyElements"] if e["Element"] != "SO"]
+        with self.assertRaises(SystemExit):
+            wf.apply_wiring(qsf)
 
     def test_drip_spec_hash_present_and_matches_current_tsv(self):
         import drip_spec

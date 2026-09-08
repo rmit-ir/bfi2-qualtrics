@@ -26,6 +26,10 @@ Reads ../../../output/BFI-2_Full_RPS.qsf (untouched) and writes
 ../../../output/BFI-2_Full_RPS_Wired.qsf, adding two Survey-Flow nodes:
   1. An EmbeddedData node (fail-closed defaults) before the content block.
   2. A WebService node (the quality-gate POST) after the content block.
+Also switches the survey to Qualtrics's "New Survey Taking Experience"
+skin (`SO.SkinType`/`Skin`/`SkinLibrary`) -- confirmed SAFE to inject on
+import via live bisection (see NEW_SKIN_PATCH), unlike Bot Detection
+below.
 
 Still NOT generated (needs a real donor .qsf export before its exact field
 shape can be trusted, same reasoning as before): the Branch/redirect/
@@ -88,6 +92,21 @@ PLACEHOLDER_URL = "https://example.invalid/api/qualtrics/verdict"
 PLACEHOLDER_REVIEW_FALLBACK_URL = "https://example.invalid/review-fallback"
 
 NOT_DEPLOYABLE_SUFFIX = " [quality Web Service generated; auth and routing manual]"
+
+# Qualtrics's "New Survey Taking Experience" skin -- confirmed SAFE to
+# inject on import via live bisection this session (unlike RecaptchaV3/
+# IncludeSecurityFields, which both independently break import; see the
+# module docstring). Read from a real donor export of a survey manually
+# switched to it. brandingId is RMIT-account-specific, not a generic
+# BFI-2 default -- acceptable here because this generator's whole output
+# is already RMIT/this-study-specific (Prolific fields, an ase2-ai-mode
+# endpoint); the plain BFI-2_Full/Short/ExtraShort forms this script
+# doesn't touch stay Colby-neutral and portable.
+NEW_SKIN_PATCH = {
+    "SkinType": "component",
+    "Skin": {"brandingId": "3546325813", "templateId": "*simple", "overrides": None},
+    "SkinLibrary": "rmit",
+}
 
 
 def find_bfi_question(qsf, qid="QID2"):
@@ -348,6 +367,12 @@ def assert_invariants(qsf, body_params, response_map):
             f"expected flow order EmbeddedData({ed_index}) < content Block({content_index}) "
             f"< WebService({ws_index})")
 
+    so = find_element(qsf["SurveyElements"], lambda e: e["Element"] == "SO")
+    for key, expected in NEW_SKIN_PATCH.items():
+        if so["Payload"].get(key) != expected:
+            raise AssertionError(
+                f"SO.{key} = {so['Payload'].get(key)!r}, expected {expected!r}")
+
 
 def apply_wiring(qsf, url=PLACEHOLDER_URL, diagnostic_response_map=False):
     """Returns a new, fully-validated qsf dict; the input is left
@@ -364,6 +389,9 @@ def apply_wiring(qsf, url=PLACEHOLDER_URL, diagnostic_response_map=False):
     response_map()."""
     item_choice_pairs = find_bfi_question(qsf)
     validate_attention_scoring(qsf)
+
+    if find_element(qsf["SurveyElements"], lambda e: e["Element"] == "SO") is None:
+        raise SystemExit("input has no SO (Survey Options) element")
 
     fl = find_element(qsf["SurveyElements"], lambda e: e["Element"] == "FL")
     flow = fl["Payload"]["Flow"]
@@ -405,6 +433,9 @@ def apply_wiring(qsf, url=PLACEHOLDER_URL, diagnostic_response_map=False):
     c_fl["Payload"]["Properties"]["Count"] = 1 + len(c_flow)
     candidate["SurveyEntry"]["SurveyName"] = (
         candidate["SurveyEntry"]["SurveyName"] + NOT_DEPLOYABLE_SUFFIX)
+
+    c_so = find_element(candidate["SurveyElements"], lambda e: e["Element"] == "SO")
+    c_so["Payload"].update(NEW_SKIN_PATCH)
 
     assert_invariants(candidate, body_params, response_map)
     return candidate

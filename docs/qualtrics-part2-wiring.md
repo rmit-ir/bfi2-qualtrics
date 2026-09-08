@@ -90,9 +90,16 @@ Flow than the original design, not a bigger one.
 
 ### Generated vs. still-manual
 
-`wire_qualtrics_flow.py` generates the initial `EmbeddedData` defaults
-and the full `WebService` element (all 68 body fields, `ResponseMap`,
-placeholder URL).
+`wire_qualtrics_flow.py` generates the initial `EmbeddedData` defaults,
+the full `WebService` element (all 68 body fields, `ResponseMap`,
+placeholder URL), and switches the survey to Qualtrics's "New Survey
+Taking Experience" skin (`SO.SkinType`/`Skin`/`SkinLibrary`) — confirmed
+**safe** to inject on import via live bisection (unlike Bot Detection,
+below). `Skin.brandingId` is RMIT-account-specific, not a generic BFI-2
+default — acceptable here since this generator's whole output is already
+RMIT/this-study-specific (Prolific fields, an `ase2-ai-mode` endpoint);
+the plain `BFI-2_Full`/`Short`/`ExtraShort` forms this script doesn't
+touch stay Colby-neutral and portable.
 
 It does **not** generate, and these remain manual UI steps after import:
 
