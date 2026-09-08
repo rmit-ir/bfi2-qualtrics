@@ -127,6 +127,7 @@ class TestApplyWiring(unittest.TestCase):
             "prolific_session_id": "${e://Field/SESSION_ID}",
             "attention_checks_passed": "false",
             "page_submit_seconds": "0",
+            "Q_RecaptchaScore": "${e://Field/Q_RecaptchaScore}",
             "__js_drip_score": "-1",
             "__js_bfi_answered": "-1",
             "__js_debug_dump": "",

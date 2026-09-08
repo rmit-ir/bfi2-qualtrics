@@ -134,6 +134,13 @@ def build_defaults_embedded_data():
             field("prolific_session_id", "${e://Field/SESSION_ID}"),
             field("attention_checks_passed", "false"),
             field("page_submit_seconds", "0"),
+            # Self-reference activates Qualtrics's built-in bot-detection
+            # score for use in Survey-Flow branch logic / piped text later
+            # in the same response -- confirmed available a few seconds
+            # after page load (Survey Options > Security > Bot Detection
+            # must be on; see docs/qualtrics-part2-wiring.md). Default "1"
+            # is Qualtrics's own fail-open value if reCAPTCHA never loads.
+            field("Q_RecaptchaScore", "${e://Field/Q_RecaptchaScore}"),
             field("__js_drip_score", "-1"),
             field("__js_bfi_answered", "-1"),
             # TEMPORARY: piped-text-syntax diagnostic field, not part of the
