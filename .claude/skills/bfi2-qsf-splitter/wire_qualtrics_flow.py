@@ -160,28 +160,37 @@ def build_response_map():
     but maps the server's computed signals back into the response export
     for audit/debugging -- distinguishing a Web Service failure from a
     real quality failure, and letting a completed-response export be
-    compared against verify_responses.py's offline scoring."""
+    compared against verify_responses.py's offline scoring.
+
+    Orientation: {"key": <JSON path to extract from the response>,
+    "value": <destination embedded-data field name>} -- confirmed live
+    this session (the opposite orientation silently produces blank
+    fields: a real completed-response export showed every mapped field
+    empty when "key" held the destination name and "value" held the
+    response path, with the export column named after "value" but its
+    content blank because "key" wasn't a real path in the response)."""
     return [
         {"key": "verdict", "value": "verdict"},
         {"key": "next_url", "value": "next_url"},
         {"key": "completion_code", "value": "completion_code"},
-        {"key": "drip_score", "value": "quality_signals.drip_score"},
-        {"key": "bfi_answered", "value": "quality_signals.bfi_answered"},
-        {"key": "attention_checks_passed", "value": "quality_signals.attention_checks_passed"},
-        # Deliberately distinct name from Qualtrics's own Q_RecaptchaScore,
-        # so a completed-response export can't confuse "what Qualtrics
-        # measured" with "what the server echoed back".
-        {"key": "gate_recaptcha_score", "value": "quality_signals.recaptcha_score"},
+        {"key": "quality_signals.drip_score", "value": "drip_score"},
+        {"key": "quality_signals.bfi_answered", "value": "bfi_answered"},
+        {"key": "quality_signals.attention_checks_passed", "value": "attention_checks_passed"},
+        # Deliberately distinct destination name from Qualtrics's own
+        # Q_RecaptchaScore, so a completed-response export can't confuse
+        # "what Qualtrics measured" with "what the server echoed back".
+        {"key": "quality_signals.recaptcha_score", "value": "gate_recaptcha_score"},
     ]
 
 
 def build_transport_validation_response_map(body_params):
     """--transport-validation only: maps every outbound field back from
-    httpbin's JSON echo (prefixed to avoid colliding with the real
-    fail-closed defaults), so a single completed-response export shows
-    whether all 68 substitutions resolved correctly -- no manual
-    UI response-mapping needed field-by-field."""
-    return [{"key": f"check_{k}", "value": f"json.{k}"} for k, v in body_params]
+    httpbin's JSON echo (destination names prefixed to avoid colliding
+    with the real fail-closed defaults), so a single completed-response
+    export shows whether all 68 substitutions resolved correctly -- no
+    manual UI response-mapping needed field-by-field. See
+    build_response_map() for the key/value orientation."""
+    return [{"key": f"json.{k}", "value": f"check_{k}"} for k, v in body_params]
 
 
 def build_web_service(body_params, response_map, url=PLACEHOLDER_URL):
@@ -303,9 +312,13 @@ def assert_invariants(qsf, body_params, response_map):
         raise AssertionError(f"ContentType should be application/json, got {ws['ContentType']}")
     if ws["ResponseMap"] != response_map:
         raise AssertionError("ResponseMap doesn't match the expected generated mapping")
-    response_map_keys = [p["key"] for p in ws["ResponseMap"]]
-    if len(response_map_keys) != len(set(response_map_keys)):
-        raise AssertionError(f"duplicate ResponseMap destination key in {response_map_keys}")
+    # "value" is the destination field name (see build_response_map()'s
+    # docstring for the confirmed key/value orientation) -- two entries
+    # writing to the same destination is the real bug to catch, not two
+    # entries reading the same source path (which is fine).
+    response_map_destinations = [p["value"] for p in ws["ResponseMap"]]
+    if len(response_map_destinations) != len(set(response_map_destinations)):
+        raise AssertionError(f"duplicate ResponseMap destination in {response_map_destinations}")
 
     ed_nodes = [n for n in flow if n.get("Type") == "EmbeddedData"
                 and n.get("FlowID") == EMBEDDED_DATA_FLOW_ID]

@@ -163,12 +163,18 @@ against `response_verification/verify_responses.py`'s offline scoring):
   {"key": "verdict", "value": "verdict"},
   {"key": "next_url", "value": "next_url"},
   {"key": "completion_code", "value": "completion_code"},
-  {"key": "drip_score", "value": "quality_signals.drip_score"},
-  {"key": "bfi_answered", "value": "quality_signals.bfi_answered"},
-  {"key": "attention_checks_passed", "value": "quality_signals.attention_checks_passed"},
-  {"key": "gate_recaptcha_score", "value": "quality_signals.recaptcha_score"}
+  {"key": "quality_signals.drip_score", "value": "drip_score"},
+  {"key": "quality_signals.bfi_answered", "value": "bfi_answered"},
+  {"key": "quality_signals.attention_checks_passed", "value": "attention_checks_passed"},
+  {"key": "quality_signals.recaptcha_score", "value": "gate_recaptcha_score"}
 ]
 ```
+
+Orientation: `key` is the JSON path to extract from the response, `value`
+is the destination embedded-data field name — confirmed live this
+session (the reverse orientation silently produces blank fields: the
+export column gets named after `value`, but its content stays empty
+because `key` isn't a real path in the response body).
 
 (`gate_recaptcha_score`, not `recaptcha_score`, to avoid colliding with
 Qualtrics's own `Q_RecaptchaScore` field in exports.)
