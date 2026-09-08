@@ -175,6 +175,15 @@ def build_response_map():
     ]
 
 
+def build_transport_validation_response_map(body_params):
+    """--transport-validation only: maps every outbound field back from
+    httpbin's JSON echo (prefixed to avoid colliding with the real
+    fail-closed defaults), so a single completed-response export shows
+    whether all 68 substitutions resolved correctly -- no manual
+    UI response-mapping needed field-by-field."""
+    return [{"key": f"check_{k}", "value": f"json.{k}"} for k, v in body_params]
+
+
 def build_web_service(body_params, response_map, url=PLACEHOLDER_URL):
     return {
         "Type": "WebService",
@@ -312,14 +321,19 @@ def assert_invariants(qsf, body_params, response_map):
             f"< WebService({ws_index})")
 
 
-def apply_wiring(qsf, url=PLACEHOLDER_URL):
+def apply_wiring(qsf, url=PLACEHOLDER_URL, diagnostic_response_map=False):
     """Returns a new, fully-validated qsf dict; the input is left
     untouched. Preflight validates the source and builds every new
     structure from it (any of this can raise SystemExit); only then is a
     deep copy mutated and re-validated (assert_invariants, AssertionError)
     before being adopted -- so a failure at ANY point, including a
     post-generation invariant failure, never returns a partially-mutated
-    result."""
+    result.
+
+    diagnostic_response_map=True (--transport-validation only) swaps the
+    production ResponseMap for one that echoes every outbound field back
+    from httpbin's JSON response -- see build_transport_validation_
+    response_map()."""
     item_choice_pairs = find_bfi_question(qsf)
     validate_attention_scoring(qsf)
 
@@ -348,7 +362,8 @@ def apply_wiring(qsf, url=PLACEHOLDER_URL):
     spec_hash = drip_spec.canonical_spec_sha256(pairs)
 
     body_params = build_body_params(item_choice_pairs, spec_hash)
-    response_map = build_response_map()
+    response_map = (build_transport_validation_response_map(body_params)
+                    if diagnostic_response_map else build_response_map())
     web_service = build_web_service(body_params, response_map, url=url)
     defaults_ed = build_defaults_embedded_data()
 
@@ -381,7 +396,7 @@ def main():
     # substitutions resolve correctly against a real completed response
     # before trusting the design at full (68-parameter) scale.
     url = "https://httpbin.org/post" if transport_validation else PLACEHOLDER_URL
-    wired = apply_wiring(qsf, url=url)
+    wired = apply_wiring(qsf, url=url, diagnostic_response_map=transport_validation)
 
     out = (REPO_ROOT / "qualtrics_test_exports" / "BFI-2_Full_RPS_Wired_transport_validation.qsf"
            if transport_validation else OUTPUT_FILE)
