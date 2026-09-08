@@ -102,18 +102,26 @@ It does **not** generate, and these remain manual UI steps after import:
   enabled through the UI, but injecting them via a plain JSON patch on a
   freshly-imported `.qsf` broke the import outright ("Something went
   wrong and the project wasn't created", live-tested, reproduced,
-  isolated by bisection — confirmed it wasn't `BallotBoxStuffingPrevention`
-  or the `ResponseMap` change, it was the `SO` patch itself). Presence in
-  an *export* isn't proof a value is safe to *inject* on *import* — the
-  UI toggle likely provisions something account/brand-side (a reCAPTCHA
-  site-key binding; one earlier export showed
-  `Q_RecaptchaError = missingSiteKey`) that a flat boolean in the `.qsf`
-  doesn't replicate. Enable Bot Detection manually in the Qualtrics UI
-  (Survey Options > Security) after import instead. Don't retry this
-  generation without a real donor export of a *freshly-imported, working*
-  file with it enabled — the mere presence of these keys in a working
-  survey's export is exactly the kind of evidence this project has been
-  burned by trusting before.
+  isolated by bisection). Bisected further, one field at a time:
+  `RecaptchaV3: true` alone (with `IncludeSecurityFields` left `false`)
+  **fails**; `IncludeSecurityFields: true` alone (with `RecaptchaV3` left
+  `false`) **also fails** — so this isn't a pairing/combination quirk,
+  each field independently breaks import. Best-supported explanation
+  found via research (Qualtrics's own docs don't cover this QSF behavior
+  either way): the importer applies feature-level validation beyond JSON
+  parsing, and Bot Detection specifically isn't an accepted state to
+  create *through* a QSF import, regardless of whether it's provisioned
+  in the account (this account clearly has the feature — it works fine
+  toggled on manually, post-import). Presence in an *export* isn't proof
+  a value is safe to *inject* on *import* — a distinction this project's
+  been burned by before. Enable Bot Detection manually in the Qualtrics
+  UI (Survey Options > Security) after import instead. If API access
+  ever becomes available, `PUT /survey-definitions/{surveyId}/options`
+  (confirmed to exist and to accept undocumented option fields per
+  Qualtrics Community reports) is the architecturally correct
+  post-import alternative to try — `GET` an already-enabled survey's
+  options first and reuse its exact returned shape, don't construct one
+  from `.qsf` internals.
 - The verdict `Branch` (routing on `${e://Field/verdict}`) and the
   redirect/`EndSurvey` nodes — needs a real donor `.qsf` export containing
   these element types before their exact shape can be trusted (same

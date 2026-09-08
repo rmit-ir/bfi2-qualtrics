@@ -36,14 +36,17 @@ SurveyName suffix and the wiring doc for exactly what's still manual.
 Also NOT generated, deliberately reverted after a live test: enabling
 Qualtrics's built-in Bot Detection (`RecaptchaV3`/`IncludeSecurityFields`
 on the `SO` element) via a plain JSON patch broke a fresh Qualtrics
-import ("Something went wrong and the project wasn't created"), even
-though those exact keys/values were present in donor exports of surveys
-where Bot Detection was enabled through the UI. Presence in an *export*
-isn't proof a value is safe to *inject* on import -- the UI toggle likely
-provisions something account/brand-side (a reCAPTCHA site-key binding;
-one earlier export showed `Q_RecaptchaError = missingSiteKey`) that a
-flat boolean in the .qsf doesn't replicate. Enable Bot Detection manually
-in the Qualtrics UI (Survey Options > Security) after import instead.
+import ("Something went wrong and the project wasn't created"). Bisected
+one field at a time -- `RecaptchaV3: true` alone fails, `IncludeSecurityFields:
+true` alone also fails, so it's not a pairing quirk, each independently
+breaks import -- even though those exact keys/values were present in
+donor exports of surveys where Bot Detection was enabled through the UI.
+Presence in an *export* isn't proof a value is safe to *inject* on
+import. Enable Bot Detection manually in the Qualtrics UI (Survey
+Options > Security) after import instead; see
+../../../docs/qualtrics-part2-wiring.md for the full investigation and a
+possible REST-API-based alternative if this account's API access is ever
+unblocked.
 
 Usage:
     python3 wire_qualtrics_flow.py
