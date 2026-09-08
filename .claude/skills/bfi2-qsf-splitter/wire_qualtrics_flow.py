@@ -53,7 +53,25 @@ sys.path.insert(0, str(SKILL_DIR))
 from split_bfi2 import find_element  # noqa: E402
 import gen_drip_js  # noqa: E402
 
-QID_JS = "QID102"  # QID100/QID101 already used by add_rps.py's RPS items
+QID_JS = "QID102"
+
+# TEMPORARY: appended to the real JS snippet when --debug-dump is passed, to
+# diagnose which Qualtrics piped-text syntax actually resolves a Matrix
+# question's per-item recoded answer (see docs/qualtrics-part2-wiring.md S2
+# step 3). Writes to __js_debug_dump, which build_defaults_embedded_data()
+# already pre-declares. Remove once the correct syntax is confirmed.
+DEBUG_DUMP_JS = """
+Qualtrics.SurveyEngine.addOnReady(function () {
+    var dump = "";
+    dump += "AllChoicesRecode=[${q://QID2/SelectedChoicesRecode}]";
+    dump += " | AllAnswerRecode=[${q://QID2/SelectedAnswerRecode}]";
+    dump += " | Item1_plain=[${q://QID2/SelectedAnswerRecode/1}]";
+    dump += " | Item1_x=[${q://QID2/SelectedAnswerRecode/x1}]";
+    dump += " | Item1_ChoicesRecode_plain=[${q://QID2/SelectedChoicesRecode/1}]";
+    dump += " | Item1_ChoicesRecode_x=[${q://QID2/SelectedChoicesRecode/x1}]";
+    Qualtrics.SurveyEngine.setJSEmbeddedData("__js_debug_dump", dump);
+});
+"""  # QID100/QID101 already used by add_rps.py's RPS items
 
 # Same deterministic-ID-from-seed technique as split_bfi2.scoring_category_id
 # (not reused directly -- that one is SC_-prefixed and a fixed 15 chars;
@@ -258,17 +276,27 @@ def main():
         qsf = json.load(f)
 
     js_snippet = gen_drip_js.render(gen_drip_js.load_pairs())
+    debug = "--debug-dump" in sys.argv
+    if debug:
+        js_snippet += "\n" + DEBUG_DUMP_JS
     apply_wiring(qsf, js_snippet)
 
+    # --debug-dump writes to qualtrics_test_exports/ (gitignored scratch),
+    # never to the tracked OUTPUT_FILE -- the debug dump is diagnostic-only,
+    # not part of the real deliverable.
+    out = (REPO_ROOT / "qualtrics_test_exports" / "BFI-2_Full_RPS_Wired_debug.qsf"
+           if debug else OUTPUT_FILE)
+    out.parent.mkdir(exist_ok=True)
     # Write to a sibling temp file, then rename into place -- an
-    # interruption mid-write can't leave a truncated OUTPUT_FILE.
-    tmp = OUTPUT_FILE.with_suffix(OUTPUT_FILE.suffix + ".tmp")
+    # interruption mid-write can't leave a truncated output file.
+    tmp = out.with_suffix(out.suffix + ".tmp")
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(qsf, f, separators=(",", ":"))
-    tmp.replace(OUTPUT_FILE)
-    print(f"Wrote {OUTPUT_FILE.name} (PROTOTYPE, phase 1 only -- see module "
-          f"docstring): added {QID_JS} + its own block + EmbeddedData "
-          f"defaults. Branch/WebService NOT generated yet.")
+    tmp.replace(out)
+    print(f"Wrote {out.relative_to(REPO_ROOT)} (PROTOTYPE, phase 1 only -- "
+          f"see module docstring): added {QID_JS} + its own block + "
+          f"EmbeddedData defaults. Branch/WebService NOT generated yet."
+          + (" [includes --debug-dump diagnostic JS]" if debug else ""))
 
 
 if __name__ == "__main__":
