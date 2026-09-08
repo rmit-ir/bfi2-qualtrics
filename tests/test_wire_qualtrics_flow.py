@@ -129,6 +129,7 @@ class TestApplyWiring(unittest.TestCase):
             "page_submit_seconds": "0",
             "__js_drip_score": "-1",
             "__js_bfi_answered": "-1",
+            "__js_debug_dump": "",
         }
         ed = wf.build_defaults_embedded_data()
         actual = {f["Field"]: f["Value"] for f in ed["EmbeddedData"]}

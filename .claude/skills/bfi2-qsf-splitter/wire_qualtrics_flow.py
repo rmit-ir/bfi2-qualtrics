@@ -118,6 +118,11 @@ def build_defaults_embedded_data():
             field("page_submit_seconds", "0"),
             field("__js_drip_score", "-1"),
             field("__js_bfi_answered", "-1"),
+            # TEMPORARY: piped-text-syntax diagnostic field, not part of the
+            # real design (not read by the Web Service body) -- remove once
+            # the correct per-item Matrix piped-text syntax is confirmed
+            # (see docs/qualtrics-part2-wiring.md S2 step 3).
+            field("__js_debug_dump", ""),
         ],
     }
 
