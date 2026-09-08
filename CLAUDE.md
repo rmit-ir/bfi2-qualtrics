@@ -91,16 +91,19 @@ with the expected top-level shape. Run it after editing any `.qsf`.
   a source qsf whose item wording matches the map. `add_rps.py` (same
   directory) layers the Risk Propensity Scale + an attention-check item onto
   `output/BFI-2_Full.qsf` to produce `BFI-2_Full_RPS.qsf`, reusing the same
-  `GradingData`/`SCO` scoring mechanism. `gen_drip_js.py` (same directory)
-  generates the client-side DRIP-score and completeness (`bfi_answered`)
-  JavaScript for that survey's real-time quality gate from
-  `response_verification/drip_item_pairs.tsv` — see
-  `docs/qualtrics-part2-wiring.md`. `wire_qualtrics_flow.py` (same
-  directory) is an experimental, Phase-1-only generator for part of that
-  survey's Survey Flow wiring (the JS question + embedded-data defaults),
-  an alternative to the fully-manual UI build for when the Qualtrics REST
-  API is blocked by organizational policy — see that doc's §5b for what
-  it does and does not cover, and why.
+  `GradingData`/`SCO` scoring mechanism. `drip_spec.py` (same directory)
+  loads, validates, and canonically hashes the DRIP pair table
+  (`response_verification/drip_item_pairs.tsv`) for that survey's
+  real-time quality gate. `wire_qualtrics_flow.py` (same directory)
+  generates the gate's Survey Flow `EmbeddedData` defaults and full
+  `WebService` element (all 60 BFI-2 items sent as raw per-item Body
+  Parameters; `drip_score`/`bfi_answered` are computed server-side in
+  `ase2-ai-mode`, not client-side JS — an earlier JS-based design was
+  abandoned after live testing established Question JavaScript never
+  executes in the target Qualtrics account) — see
+  `docs/qualtrics-part2-wiring.md` for the full request contract, what's
+  generated vs. still manual (the verdict `Branch`/redirect nodes and a
+  custom auth header), and the `ase2-ai-mode` handoff spec.
 
 ## File format
 

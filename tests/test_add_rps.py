@@ -1,18 +1,20 @@
 #!/usr/bin/env python3
-"""Regression coverage for add_rps.py and gen_drip_js.py.
+"""Regression coverage for add_rps.py.
 
-Checks the actual arithmetic (reverse-keying, attention-check scoring, the
-DRIP JS's recode logic) rather than just "the script runs" -- add_rps.py's
-own assert_invariants() already checks structure at generation time, but
-that doesn't survive as a regression test once the generated .qsf is just
-data on disk.
+Checks the actual arithmetic (reverse-keying, attention-check scoring)
+rather than just "the script runs" -- add_rps.py's own assert_invariants()
+already checks structure at generation time, but that doesn't survive as a
+regression test once the generated .qsf is just data on disk.
+
+DRIP pair-table coverage lives in tests/test_drip_spec.py (moved there
+when gen_drip_js.py, the client-side JS generator, was deleted -- Question
+JavaScript never executes in the target Qualtrics account, confirmed by
+repeated live testing; see docs/qualtrics-part2-wiring.md).
 
 Stdlib only (no pytest needed):
     python3 -m unittest discover tests
 """
-import csv
 import json
-import re
 import sys
 import unittest
 from pathlib import Path
@@ -22,7 +24,6 @@ SKILL_DIR = REPO_ROOT / ".claude" / "skills" / "bfi2-qsf-splitter"
 sys.path.insert(0, str(SKILL_DIR))
 
 import add_rps  # noqa: E402
-import gen_drip_js  # noqa: E402
 
 
 class TestAddRpsScoring(unittest.TestCase):
@@ -72,69 +73,6 @@ class TestAddRpsScoring(unittest.TestCase):
         rps_choices_item7 = {g["ChoiceID"] for g in self.item7_payload["GradingData"]
                              if add_rps.RPS_CATEGORY_ID in g["Grades"]}
         self.assertEqual(len(rps_choices_main) + len(rps_choices_item7), 7)
-
-
-class TestGenDripJs(unittest.TestCase):
-    def setUp(self):
-        self.pairs = gen_drip_js.load_pairs()
-        self.js = gen_drip_js.render(self.pairs)
-
-    def test_fifteen_pairs_loaded(self):
-        self.assertEqual(len(self.pairs), 15)
-
-    def test_reverse_pair_gets_6_minus_x_recode(self):
-        reverse_pair = next(p for p in self.pairs if p["reverse1"] or p["reverse2"])
-        idx = self.pairs.index(reverse_pair) + 1
-        if reverse_pair["reverse1"]:
-            self.assertIn(f"(6 - v{idx}a)", self.js)
-        if reverse_pair["reverse2"]:
-            self.assertIn(f"(6 - v{idx}b)", self.js)
-
-    def test_non_reverse_pair_has_no_recode(self):
-        plain_pair = next(p for p in self.pairs if not p["reverse1"] and not p["reverse2"])
-        idx = self.pairs.index(plain_pair) + 1
-        self.assertNotIn(f"(6 - v{idx}a)", self.js)
-        self.assertNotIn(f"(6 - v{idx}b)", self.js)
-
-    def test_every_pair_item_piped_from_qid2(self):
-        for p in self.pairs:
-            self.assertIn(f"QID2/SelectedChoicesRecode/{p['item1']}", self.js)
-            self.assertIn(f"QID2/SelectedChoicesRecode/{p['item2']}", self.js)
-
-    def test_nan_sentinel_present(self):
-        # Regression for the Starlette-error-serializer issue: a failed
-        # parseInt (skipped item) must sentinel to -1, never reach the Web
-        # Service call as a literal NaN.
-        self.assertIn("isNaN(drip)", self.js)
-        self.assertIn("drip = -1", self.js)
-
-    def test_drip_pairs_tsv_row_count_matches(self):
-        pairs_file = REPO_ROOT / "response_verification" / "drip_item_pairs.tsv"
-        with open(pairs_file, encoding="utf-8") as f:
-            rows = list(csv.DictReader(f, delimiter="\t"))
-        self.assertEqual(len(rows), 15)
-
-    def test_bfi_answered_pipes_exactly_items_1_through_60_in_order(self):
-        match = re.search(r"var bfiRaw = \[(.*?)\];", self.js)
-        self.assertIsNotNone(match, "bfiRaw array not found in generated JS")
-        # Full quoted-string entries, not just the digits inside them -- a
-        # findall on the digit pattern alone would still pass if the array
-        # also contained extra, non-matching, or malformed entries.
-        entries = re.findall(r'"([^"]*)"', match.group(1))
-        expected = [gen_drip_js.piped(i) for i in range(1, 61)]
-        self.assertEqual(entries, expected)
-
-    def test_bfi_answered_uses_exact_regex_match_not_permissive_parseint(self):
-        self.assertIn("/^[1-5]$/.test(bfiRaw[i])", self.js)
-
-    def test_bfi_answered_sets_embedded_data(self):
-        # Must carry the '__js_' prefix setJSEmbeddedData requires -- the
-        # plain 'bfi_answered' name is only set later by a separate
-        # Embedded Data copy step (see docs/qualtrics-part2-wiring.md S2).
-        self.assertIn('setJSEmbeddedData("__js_bfi_answered", bfiAnswered)', self.js)
-
-    def test_drip_score_sets_embedded_data(self):
-        self.assertIn('setJSEmbeddedData("__js_drip_score", drip)', self.js)
 
 
 class TestGeneratedQsf(unittest.TestCase):

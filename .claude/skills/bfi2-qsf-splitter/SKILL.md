@@ -116,7 +116,9 @@ category keeps a stable ID across runs. See
   `../../../output/BFI-2_Full_RPS.qsf`. Run after `split_bfi2.py` (needs its
   output as input); doesn't touch the pure `BFI-2_Full.qsf`. Run
   `python3 add_rps.py` with no arguments.
-- `gen_drip_js.py` — generates the client-side DRIP-score JavaScript snippet
-  (for `BFI-2_Full_RPS.qsf`'s real-time quality gate) from
-  `../../../response_verification/drip_item_pairs.tsv`. See
-  `../../../docs/qualtrics-part2-wiring.md`.
+- `drip_spec.py` — loads, structurally validates, cross-validates (against
+  a target QSF's real item text), and canonically hashes the DRIP
+  (Ruchensky, Edens, & Donnellan, 2025) item-pair spec from
+  `../../../response_verification/drip_item_pairs.tsv`. Used by
+  `wire_qualtrics_flow.py`'s generated real-time quality-gate Web Service;
+  see `../../../docs/qualtrics-part2-wiring.md`.
