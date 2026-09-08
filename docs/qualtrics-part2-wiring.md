@@ -90,26 +90,30 @@ Flow than the original design, not a bigger one.
 
 ### Generated vs. still-manual
 
-`wire_qualtrics_flow.py` generates the initial `EmbeddedData` defaults,
-the full `WebService` element (all 68 body fields, `ResponseMap`,
-placeholder URL), and enables Qualtrics's built-in Bot Detection on the
-survey's `SO` (Survey Options) element — `RecaptchaV3`,
-`IncludeSecurityFields`, and `BallotBoxStuffingPrevention`, all confirmed
-real `.qsf` keys from two independent donor exports with these turned on
-via the UI (Survey Options > Security). `IncludeSecurityFields` is what
-makes `Q_RecaptchaScore`/`Q_RecaptchaStatus`/`Q_RecaptchaError`/
-`Q_BallotBoxStuffing`/`Q_PrivateBrowserDetected` appear in response
-exports at all — without it, `Q_RecaptchaScore` still works as piped text
-mid-survey (confirmed earlier), but none of these show up in exports.
-`BallotBoxStuffingPrevention`'s own detail fields (`Behavior`/`Message`/
-`MessageLibrary`/`URL`) are left untouched — every donor export seen has
-them as `None` even with the boolean on, and their populated shape when
-that feature is actually configured (a custom message, a redirect URL)
-is unconfirmed, so this only flips the boolean rather than guessing at
-those.
+`wire_qualtrics_flow.py` generates the initial `EmbeddedData` defaults
+and the full `WebService` element (all 68 body fields, `ResponseMap`,
+placeholder URL).
 
 It does **not** generate, and these remain manual UI steps after import:
 
+- Bot Detection (`RecaptchaV3`/`IncludeSecurityFields` on the `SO`
+  element) — **tried and reverted.** Those exact keys/values were
+  confirmed present in donor exports of surveys with Bot Detection
+  enabled through the UI, but injecting them via a plain JSON patch on a
+  freshly-imported `.qsf` broke the import outright ("Something went
+  wrong and the project wasn't created", live-tested, reproduced,
+  isolated by bisection — confirmed it wasn't `BallotBoxStuffingPrevention`
+  or the `ResponseMap` change, it was the `SO` patch itself). Presence in
+  an *export* isn't proof a value is safe to *inject* on *import* — the
+  UI toggle likely provisions something account/brand-side (a reCAPTCHA
+  site-key binding; one earlier export showed
+  `Q_RecaptchaError = missingSiteKey`) that a flat boolean in the `.qsf`
+  doesn't replicate. Enable Bot Detection manually in the Qualtrics UI
+  (Survey Options > Security) after import instead. Don't retry this
+  generation without a real donor export of a *freshly-imported, working*
+  file with it enabled — the mere presence of these keys in a working
+  survey's export is exactly the kind of evidence this project has been
+  burned by trusting before.
 - The verdict `Branch` (routing on `${e://Field/verdict}`) and the
   redirect/`EndSurvey` nodes — needs a real donor `.qsf` export containing
   these element types before their exact shape can be trusted (same
@@ -347,7 +351,9 @@ as more than a generated draft:
       key/value orientation bug (§3) silently produced blank fields with
       correctly-named columns, which looked superficially fine until the
       cell contents were actually checked.
-- [ ] Confirm `Q_RecaptchaScore`/`Q_RecaptchaStatus`/`Q_RecaptchaError`/
+- [ ] After manually enabling Bot Detection in the UI (not generated —
+      see "Generated vs. still-manual" above): confirm
+      `Q_RecaptchaScore`/`Q_RecaptchaStatus`/`Q_RecaptchaError`/
       `Q_BallotBoxStuffing`/`Q_PrivateBrowserDetected` all appear as
       columns in a completed-response export (this needs
       `IncludeSecurityFields` — `Q_RecaptchaScore` alone works as piped

@@ -234,35 +234,18 @@ class TestApplyWiring(unittest.TestCase):
         self.assertEqual(by_value["drip_score"], "quality_signals.drip_score")
         self.assertEqual(by_value["verdict"], "verdict")
 
-    def test_survey_options_enables_bot_detection(self):
-        qsf = self._wired()
-        so = wf.find_element(qsf["SurveyElements"], lambda e: e["Element"] == "SO")
-        for key, expected in wf.build_security_options_patch().items():
-            self.assertEqual(so["Payload"][key], expected, key)
-
-    def test_ballot_box_detail_fields_left_untouched(self):
-        # Only the boolean is flipped -- Behavior/Message/MessageLibrary/
-        # URL keep whatever the source qsf already had (confirmed None in
-        # every donor export seen, even with the boolean off); their
-        # populated shape when the feature is actually configured is
-        # unconfirmed, so this script doesn't guess at it.
+    def test_survey_options_left_completely_untouched(self):
+        # Enabling Bot Detection (RecaptchaV3/IncludeSecurityFields) via a
+        # plain JSON patch on SO was tried and reverted -- it broke a
+        # fresh Qualtrics import even though those exact values were
+        # present in donor exports of surveys enabled through the UI.
+        # This script must not touch SO at all until a real donor export
+        # of a *freshly-imported-and-working* file confirms what's safe.
         before_so = wf.find_element(
             self.input_qsf["SurveyElements"], lambda e: e["Element"] == "SO")
-        before_details = {
-            k: before_so["Payload"].get(k)
-            for k in ("BallotBoxStuffingPreventionBehavior", "BallotBoxStuffingPreventionMessage",
-                     "BallotBoxStuffingPreventionMessageLibrary", "BallotBoxStuffingPreventionURL")
-        }
         qsf = self._wired()
         after_so = wf.find_element(qsf["SurveyElements"], lambda e: e["Element"] == "SO")
-        for k, before_v in before_details.items():
-            self.assertEqual(after_so["Payload"].get(k), before_v, k)
-
-    def test_rejects_missing_so_element(self):
-        qsf = copy.deepcopy(self.input_qsf)
-        qsf["SurveyElements"] = [e for e in qsf["SurveyElements"] if e["Element"] != "SO"]
-        with self.assertRaises(SystemExit):
-            wf.apply_wiring(qsf)
+        self.assertEqual(after_so, before_so)
 
     def test_drip_spec_hash_present_and_matches_current_tsv(self):
         import drip_spec

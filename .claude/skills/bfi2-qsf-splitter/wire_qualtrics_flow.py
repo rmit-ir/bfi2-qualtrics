@@ -26,19 +26,24 @@ Reads ../../../output/BFI-2_Full_RPS.qsf (untouched) and writes
 ../../../output/BFI-2_Full_RPS_Wired.qsf, adding two Survey-Flow nodes:
   1. An EmbeddedData node (fail-closed defaults) before the content block.
   2. A WebService node (the quality-gate POST) after the content block.
-Also enables Qualtrics's built-in Bot Detection on the `SO` (Survey
-Options) element -- `RecaptchaV3`, `IncludeSecurityFields`, and
-`BallotBoxStuffingPrevention`, confirmed real .qsf keys from a donor
-export with Bot Detection turned on in the UI (Survey Options > Security).
-`IncludeSecurityFields` is what makes `Q_RecaptchaScore`/`Q_RecaptchaStatus`/
-`Q_RecaptchaError`/`Q_BallotBoxStuffing`/`Q_PrivateBrowserDetected` appear
-in response exports at all.
 
 Still NOT generated (needs a real donor .qsf export before its exact field
 shape can be trusted, same reasoning as before): the Branch/redirect/
 EndSurvey nodes, and a custom auth-header entry (only an empty `Headers: []`
 is confirmed). The committed output is not deployable as-is -- see its
 SurveyName suffix and the wiring doc for exactly what's still manual.
+
+Also NOT generated, deliberately reverted after a live test: enabling
+Qualtrics's built-in Bot Detection (`RecaptchaV3`/`IncludeSecurityFields`
+on the `SO` element) via a plain JSON patch broke a fresh Qualtrics
+import ("Something went wrong and the project wasn't created"), even
+though those exact keys/values were present in donor exports of surveys
+where Bot Detection was enabled through the UI. Presence in an *export*
+isn't proof a value is safe to *inject* on import -- the UI toggle likely
+provisions something account/brand-side (a reCAPTCHA site-key binding;
+one earlier export showed `Q_RecaptchaError = missingSiteKey`) that a
+flat boolean in the .qsf doesn't replicate. Enable Bot Detection manually
+in the Qualtrics UI (Survey Options > Security) after import instead.
 
 Usage:
     python3 wire_qualtrics_flow.py
@@ -259,24 +264,6 @@ def build_defaults_embedded_data():
     }
 
 
-def build_security_options_patch():
-    """Overrides applied to the SO (Survey Options) element's Payload --
-    confirmed real .qsf keys from two independent donor exports with Bot
-    Detection enabled via the UI (Survey Options > Security).
-    IncludeSecurityFields is what makes Q_RecaptchaScore/Q_RecaptchaStatus/
-    Q_RecaptchaError/Q_BallotBoxStuffing/Q_PrivateBrowserDetected appear
-    in response exports at all. The BallotBoxStuffingPrevention* detail
-    fields (Behavior/Message/MessageLibrary/URL) are deliberately left
-    untouched -- every donor export seen has them as None even with the
-    boolean off, and their populated shape when the feature is actually
-    configured is unconfirmed; this only flips the boolean."""
-    return {
-        "RecaptchaV3": True,
-        "IncludeSecurityFields": True,
-        "BallotBoxStuffingPrevention": True,
-    }
-
-
 def assert_invariants(qsf, body_params, response_map):
     fl = find_element(qsf["SurveyElements"], lambda e: e["Element"] == "FL")
     if not fl["Payload"].get("FlowID"):
@@ -358,12 +345,6 @@ def assert_invariants(qsf, body_params, response_map):
             f"expected flow order EmbeddedData({ed_index}) < content Block({content_index}) "
             f"< WebService({ws_index})")
 
-    so = find_element(qsf["SurveyElements"], lambda e: e["Element"] == "SO")
-    for key, expected in build_security_options_patch().items():
-        if so["Payload"].get(key) != expected:
-            raise AssertionError(
-                f"SO.{key} = {so['Payload'].get(key)!r}, expected {expected!r}")
-
 
 def apply_wiring(qsf, url=PLACEHOLDER_URL, diagnostic_response_map=False):
     """Returns a new, fully-validated qsf dict; the input is left
@@ -380,9 +361,6 @@ def apply_wiring(qsf, url=PLACEHOLDER_URL, diagnostic_response_map=False):
     response_map()."""
     item_choice_pairs = find_bfi_question(qsf)
     validate_attention_scoring(qsf)
-
-    if find_element(qsf["SurveyElements"], lambda e: e["Element"] == "SO") is None:
-        raise SystemExit("input has no SO (Survey Options) element")
 
     fl = find_element(qsf["SurveyElements"], lambda e: e["Element"] == "FL")
     flow = fl["Payload"]["Flow"]
@@ -424,9 +402,6 @@ def apply_wiring(qsf, url=PLACEHOLDER_URL, diagnostic_response_map=False):
     c_fl["Payload"]["Properties"]["Count"] = 1 + len(c_flow)
     candidate["SurveyEntry"]["SurveyName"] = (
         candidate["SurveyEntry"]["SurveyName"] + NOT_DEPLOYABLE_SUFFIX)
-
-    c_so = find_element(candidate["SurveyElements"], lambda e: e["Element"] == "SO")
-    c_so["Payload"].update(build_security_options_patch())
 
     assert_invariants(candidate, body_params, response_map)
     return candidate
