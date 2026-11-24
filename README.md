@@ -67,6 +67,13 @@ drives that decision (the BFI-2/RPS content and scoring here is
 self-contained; that doc is only needed if you're standing up the same
 real-time gate).
 
+## ASE Part 1 study draft tooling
+
+A separate [ASE Part 1 draft transformer](docs/ase-part1-draft.md) applies a
+versioned content update to a reviewed, private native QSF baseline. It is not
+a BFI-2 form, an import-ready public survey, or a live configuration. Keep all
+private source and generated QSF files outside Git.
+
 ## Verifying response quality
 
 `response_verification/verify_responses.py` scans a Qualtrics **response**
