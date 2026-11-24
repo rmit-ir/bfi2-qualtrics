@@ -9,7 +9,7 @@ from pathlib import Path
 import re
 import sys
 
-VERSION = "ase-part1-2026-11-24-v1"
+VERSION = "ase-part1-2026-11-24-v1.1"
 BASE_AGE = ("18–24", "25–34", "35–44", "45+", "Prefer not to say")
 BASE_EDUCATION = ("Below secondary", "Secondary", "Tertiary", "Postgraduate", "Other", "Prefer not to say")
 AGE = ("18–24", "25–34", "35–44", "45–54", "55–64", "65+", "Prefer not to say")
@@ -84,7 +84,7 @@ def _block_order(elements):
     return {index: element for index, element in zip(BASE_ORDER, elements)}
 
 
-def _choices(question, original_labels, labels):
+def _choices(question, original_labels, labels, missing_counter_floor=None):
     require(all(not question.get(field) for field in _CHOICE_DEPENDENCIES),
             "unsupported age or education choice dependencies")
     require(not question.get("Randomization") or question["Randomization"].get("Type") in ("None", ""),
@@ -101,8 +101,16 @@ def _choices(question, original_labels, labels):
     require(tuple(old[str(key)]["Display"] for key in order) == original_labels,
             "unexpected baseline age or education choice labels")
     by_label = {choice["Display"]: int(key) for key, choice in old.items()}
-    next_id = question.get("NextChoiceId")
-    require(type(next_id) is int and max(map(int, old)) < next_id <= 99999990,
+    max_existing = max(map(int, old))
+    if "NextChoiceId" in question:
+        require(missing_counter_floor is None, "cannot override native NextChoiceId")
+        next_id = question["NextChoiceId"]
+    else:
+        # A new inactive copy has no inherited responses. Start above every
+        # source ID, including labels that will be removed, and allow a
+        # separately reviewed higher floor for IDs seen in retained history.
+        next_id = max_existing + 1 if missing_counter_floor is None else missing_counter_floor
+    require(type(next_id) is int and max_existing < next_id <= 99999990,
             "invalid age or education NextChoiceId")
     recodes = question.get("RecodeValues")
     require(not recodes or (isinstance(recodes, dict) and
@@ -122,7 +130,7 @@ def _choices(question, original_labels, labels):
         question["RecodeValues"] = {key: value for key, value in recodes.items() if key in new}
 
 
-def prepare_draft(original):
+def prepare_draft(original, *, age_next_choice_id=None, education_next_choice_id=None):
     """Return a copy; never mutate the caller's private baseline."""
     try:
         draft = deepcopy(original)
@@ -180,9 +188,9 @@ def prepare_draft(original):
                         if e["Element"] not in ("BL", "SQ")) and
                 not any(_refs(e["Payload"]) for qid, e in questions.items() if qid not in ("QID1", "QID3")),
                 "another survey element references age or education")
-        _choices(questions["QID1"]["Payload"], BASE_AGE, AGE)
+        _choices(questions["QID1"]["Payload"], BASE_AGE, AGE, age_next_choice_id)
         education = questions["QID3"]
-        _choices(education["Payload"], BASE_EDUCATION, EDUCATION)
+        _choices(education["Payload"], BASE_EDUCATION, EDUCATION, education_next_choice_id)
         education["Payload"]["QuestionText"] = EDUCATION_TEXT
         education["Payload"]["QuestionDescription"] = EDUCATION_TEXT.split("<br>", 1)[0]
         education["SecondaryAttribute"] = education["Payload"]["QuestionDescription"]
@@ -203,6 +211,9 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--baseline", type=Path, required=True, help="private native QSF outside Git")
     parser.add_argument("--baseline-sha256", required=True, help="expected SHA256 of the reviewed export")
+    parser.add_argument("--age-next-choice-id", type=int, help="reviewed age floor if native counter is absent")
+    parser.add_argument("--education-next-choice-id", type=int,
+                        help="reviewed education floor if native counter is absent")
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--check", action="store_true", help="validate transformation without writing")
     mode.add_argument("--output", type=Path, help="new private QSF outside Git")
@@ -218,7 +229,11 @@ def main(argv=None):
         require(re.fullmatch(r"[a-f0-9]{64}", args.baseline_sha256) and
                 hmac.compare_digest(hashlib.sha256(raw).hexdigest(), args.baseline_sha256),
                 "baseline digest mismatch")
-        draft = prepare_draft(json.loads(raw, object_pairs_hook=_object, parse_constant=_fail_constant))
+        draft = prepare_draft(
+            json.loads(raw, object_pairs_hook=_object, parse_constant=_fail_constant),
+            age_next_choice_id=args.age_next_choice_id,
+            education_next_choice_id=args.education_next_choice_id,
+        )
         if args.output:
             path = args.output.resolve()
             require(path.suffix == ".qsf" and _outside_git(path) and _outside_git(args.output.absolute()),

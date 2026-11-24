@@ -93,6 +93,37 @@ class PreparePart1Test(unittest.TestCase):
         with self.assertRaises(p.BadBaseline):
             p.prepare_draft(original)
 
+    def test_native_omits_only_age_and_education_counters(self):
+        original = baseline()
+        for key in ("QID1", "QID3"):
+            payload(original, key).pop("NextChoiceId")
+        result = p.prepare_draft(original)
+        self.assertEqual(payload(result, "QID1")["ChoiceOrder"], [1, 2, 3, 6, 7, 8, 5])
+        self.assertEqual(payload(result, "QID1")["NextChoiceId"], 9)
+        self.assertEqual(payload(result, "QID3")["ChoiceOrder"], [7, 8, 9, 10, 11, 12, 6])
+        self.assertEqual(payload(result, "QID3")["NextChoiceId"], 13)
+        self.assertEqual(payload(result, "QID2"), payload(original, "QID2"))
+        self.assertNotIn("NextChoiceId", payload(original, "QID1"))
+        self.assertNotIn("4", payload(result, "QID1")["Choices"])
+        self.assertTrue({"1", "2", "3", "4", "5"}.isdisjoint(payload(result, "QID3")["Choices"]))
+
+    def test_reviewed_floor_only_when_missing_and_strict_native_counter(self):
+        original = baseline()
+        with self.assertRaisesRegex(p.BadBaseline, "cannot override"):
+            p.prepare_draft(original, age_next_choice_id=20)
+        for invalid in (None, True, "20", 5, 99999991):
+            with self.subTest(invalid=invalid):
+                payload(original, "QID1")["NextChoiceId"] = invalid
+                with self.assertRaisesRegex(p.BadBaseline, "invalid.*NextChoiceId"):
+                    p.prepare_draft(original)
+        payload(original, "QID1").pop("NextChoiceId")
+        with self.assertRaisesRegex(p.BadBaseline, "invalid.*NextChoiceId"):
+            p.prepare_draft(original, age_next_choice_id=5)
+        draft = p.prepare_draft(original, age_next_choice_id=20)
+        self.assertEqual(payload(draft, "QID1")["ChoiceOrder"], [1, 2, 3, 20, 21, 22, 5])
+        self.assertEqual(payload(draft, "QID1")["NextChoiceId"], 23)
+        self.assertEqual(payload(draft, "QID3")["ChoiceOrder"], [14, 15, 16, 17, 18, 19, 6])
+
     def test_fail_closed_protects_legacy_or_different_versions(self):
         def replace_order(qsf):
             payload(qsf, "Survey Blocks")["0"]["BlockElements"][9:11] = reversed(

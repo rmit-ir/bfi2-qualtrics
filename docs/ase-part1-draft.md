@@ -1,4 +1,4 @@
-# ASE Part 1 draft, `ase-part1-2026-11-24-v1`
+# ASE Part 1 draft, `ase-part1-2026-11-24-v1.1`
 
 This is a **private-baseline transformer**, not a distributable QSF, live setup,
 eligibility gate or ethics approval. It is separate from all BFI-2/Part 2
@@ -11,7 +11,15 @@ and the education groups are informed by the [Australian Standard Classification
 Existing experience wording/choice data and QIDs/export tags are not
 regenerated. The baseline retains its own consent-first page break, remaining
 demographics, and survey flow. Retained labels retain their choice IDs; new
-labels get unused IDs starting at the baseline’s `NextChoiceId`.
+labels start at the baseline’s `NextChoiceId` when present. Version 1.1
+supports the native export omitting this optional field. In a fresh inactive
+copy only, allocation then starts above every original choice ID, including
+those retired by this edit. The fallback does not recover deleted IDs that no
+longer appear in the export. Review any retained prior versions and supply
+`--age-next-choice-id` and/or `--education-next-choice-id` if a higher floor
+is needed. These flags apply only if the relevant native counter is absent.
+Do not use the output to overwrite a survey or combine its recodes with past
+responses.
 
 ## Prepare privately
 
